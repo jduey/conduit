@@ -141,3 +141,4 @@
                               (conduit-run (a-loop bp1 0) (range 5))))))
             )
 
+(run-tests)

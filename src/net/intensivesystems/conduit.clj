@@ -106,7 +106,7 @@
       [new-x (partial loop-fn new-f prev-x)]
       [new-x (partial loop-fn new-f (first new-x))])))
 
-(def new-id gensym)
+(def new-id (comp str gensym))
 
 (defn select-fn [selection-map [v x]]
   (if-let [f (get selection-map v)]
@@ -126,6 +126,11 @@
 (defmethod conduit-run :default [p & args]
   (a-run p (first args)))
 
+(defmulti reply-proc (fn [p] (:type p)))
+
+(defmethod reply-proc :default [p]
+  p)
+
 (defarrow conduit
           [a-arr (fn [f]
                    (new-proc {} (fn this-fn [x]
@@ -138,7 +143,9 @@
                    (new-proc p (nth-fn n (:fn p))))
                    
            a-par (fn [& ps]
-                   {:fn (partial par-fn
+                   {:parts (apply merge-with merge
+                                  (map (comp :parts reply-proc) ps))
+                   :fn (partial par-fn
                                  (scatter-gather-fns ps))})
 
            a-all (fn [& ps]
@@ -148,7 +155,7 @@
            a-select (fn [& vp-pairs]
                       (let [pair-map (apply hash-map vp-pairs)]
                         {:parts (apply merge-with merge
-                                       (map :parts
+                                       (map (comp :parts reply-proc)
                                             (vals pair-map)))
                          :fn (partial select-fn
                                       (map-vals #(update-in % [1] scatter-gather-fn)
