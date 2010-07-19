@@ -3,18 +3,28 @@
      [clojure.contrib.seq-utils :only [indexed]]
      net.intensivesystems.arrows))
 
-(defn run-proc [f [first-x & rest-x]]
+(defn constant-stream-fn [l]
+  (when (seq l)
+    (fn [x]
+      [[(first l)] (constant-stream-fn (rest l))])))
+
+(defn constant-stream [l]
+  "create a stream processor that emits the contents of a list
+  regardless of what is fed to it"
+  {:fn (constant-stream-fn l)})
+
+(defn run-proc [f]
   "execute a stream processor function over a list of input values"
-  (when (and f first-x)
-    (let [[new-x new-f] (f first-x)]
+  (when f
+    (let [[new-x new-f] (f nil)]
       (if (empty? new-x)
-        (recur new-f rest-x)
+        (recur new-f)
         (lazy-seq
           (cons (first new-x)
-                (run-proc new-f rest-x)))))))
+                (run-proc new-f)))))))
 
-(defn a-run [p xs]
-  (run-proc (:fn p) xs))
+(defn a-run [p]
+  (run-proc (:fn p)))
 
 ;; mutli-method to generate a new stream processor from a
 ;; template proc and a processor function
@@ -27,21 +37,26 @@
 (defn seq-fn [f1 f2]
   "Link two processor functions together so that the output
   of the first is fed into the second. Returns a function."
-  (fn this-fn [x]
-    (let [[x1 new1] (f1 x)
-          [x2 new2] (if (empty? x1)
-                      [x1 f2]
-                      (f2 (first x1)))]
-      (if (and (= f1 new1)
-               (= f2 new2))
-        [x2 this-fn]
-        [x2 (seq-fn new1 new2)]))))
+  (when (and f1 f2)
+    (fn this-fn [x]
+      (let [[x1 new1] (f1 x)
+            [x2 new2] (if (empty? x1)
+                        [x1 f2]
+                        (f2 (first x1)))]
+        (if (and (= f1 new1)
+                 (= f2 new2))
+          [x2 this-fn]
+          [x2 (seq-fn new1 new2)])))))
 
 (defmulti seq-proc (fn [p1 p2] (:type p2)))
 
 (defmethod seq-proc :default [p1 p2]
   "compose two stream processors together sequentially"
-  (assoc p1 :fn (seq-fn (:fn p1) (:fn p2))))
+  (assoc p1
+         :fn (seq-fn (:fn p1) (:fn p2))
+         :parts (merge-with merge
+                            (:parts p1)
+                            (:parts p2))))
 
 (defn ensure-vec [x-vec]
   (if (vector? x-vec)
@@ -61,44 +76,31 @@
         [new-x this-fn]
         [new-x (nth-fn n new-f)]))))
 
-(defn deref-future [[xs fs] fut]
-  (let [[new-x new-f] (deref fut)]
-    [(conj xs new-x)
-     (conj fs new-f)]))
-
-(defn deref-futures [fut-list]
-  (reduce deref-future
-          [[] []]
-          fut-list))
-
-(defn par-fn [fs xs]
-  (let [futs (doall (map #(% xs) fs))
-        [new-xs new-fs] (deref-futures futs)
-        new-x (if (some empty? new-xs)
-                []
-                [(apply concat new-xs)])]
-    [new-x (partial par-fn new-fs)]))
-
-(defmulti scatter-gather-fn (fn [ps] (:type (first ps))))
+(defmulti scatter-gather-fn (fn [p] (:type p)))
 
 (defn proc-fn-future [f x]
-  (future
+  (fn []
     (let [[new-x new-f] (f x)]
       [new-x (partial proc-fn-future new-f)])))
 
 (defmethod scatter-gather-fn :default [p]
   (partial proc-fn-future (:fn p)))
 
-(defn nth-proc-fn [n f xs]
-  (let [[new-x new-f] (f (nth xs n))]
-    [new-x (partial nth-proc-fn n new-f)]))
+(defn get-result [[new-xs new-fs] f]
+  (let [[new-x new-f] (f)]
+    [(conj new-xs new-x)
+     (conj new-fs new-f)]))
 
-(defn nth-procs [n p]
-  (new-proc p (partial nth-proc-fn n (:fn p))))
-
-(defn scatter-gather-fns [ps]
-  (map scatter-gather-fn
-       (map-indexed nth-procs ps)))
+(defn par-fn [fs xs]
+  (let [result-fns (doall (map (fn [f x] (f x)) fs xs))
+        [new-xs new-fs] (reduce get-result
+                               [[] []]
+                               result-fns)
+        new-x (if (some empty? new-xs)
+                []
+                (vector (apply concat new-xs)))]
+    [new-x
+     (partial par-fn new-fs)]))
 
 (defn loop-fn [body-fn prev-x curr-x]
   (let [[new-x new-f] (body-fn [prev-x curr-x])]
@@ -110,7 +112,7 @@
 
 (defn select-fn [selection-map [v x]]
   (if-let [f (get selection-map v)]
-    (let [[new-x new-f] (deref (f x))]
+    (let [[new-x new-f] ((f x))]
       [new-x (partial select-fn 
                       (assoc selection-map v new-f))])
     [[] (partial select-fn selection-map)]))
@@ -118,15 +120,18 @@
 (defn map-vals [f m]
   (into {} (map f m)))
 
-(defmulti conduit-run (fn ([p arg]
-                           :default)
+(defmulti conduit-run (fn bogus-fn
+                        ([p] :default)
                         ([p arg & args]
                          (get-in p [:parts arg :type]))))
 
-(defmethod conduit-run :default [p & args]
-  (a-run p (first args)))
+(defmethod conduit-run :default 
+  ([p] (a-run p))
+  ([p l] (a-run
+           (seq-proc (constant-stream l)
+                     p))))
 
-(defmulti reply-proc (fn [p] (:type p)))
+(defmulti reply-proc (fn this-bogus-fn [p] (:type p)))
 
 (defmethod reply-proc :default [p]
   p)
@@ -143,10 +148,11 @@
                    (new-proc p (nth-fn n (:fn p))))
                    
            a-par (fn [& ps]
-                   {:parts (apply merge-with merge
-                                  (map (comp :parts reply-proc) ps))
-                   :fn (partial par-fn
-                                 (scatter-gather-fns ps))})
+                   (let [rp (map reply-proc ps)]
+                     {:parts (apply merge-with merge
+                                    (map :parts rp))
+                      :fn (partial par-fn
+                                   (map scatter-gather-fn rp))}))
 
            a-all (fn [& ps]
                    (a-seq (a-arr (partial repeat (count ps)))
