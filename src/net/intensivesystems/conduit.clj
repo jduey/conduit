@@ -3,15 +3,19 @@
      [clojure.contrib.seq-utils :only [indexed]]
      net.intensivesystems.arrows))
 
-(defn constant-stream-fn [l]
+(defn conduit-proc [proc-fn]
+  {:fn (fn this-fn [x]
+         [(proc-fn x) this-fn])})
+
+(defn conduit-seq-fn [l]
   (when (seq l)
     (fn [x]
-      [[(first l)] (constant-stream-fn (rest l))])))
+      [[(first l)] (conduit-seq-fn (rest l))])))
 
-(defn constant-stream [l]
+(defn conduit-seq [l]
   "create a stream processor that emits the contents of a list
   regardless of what is fed to it"
-  {:fn (constant-stream-fn l)})
+  {:fn (conduit-seq-fn l)})
 
 (defn run-proc [f]
   "execute a stream processor function over a list of input values"
@@ -128,7 +132,7 @@
 (defmethod conduit-run :default 
   ([p] (a-run p))
   ([p l] (a-run
-           (seq-proc (constant-stream l)
+           (seq-proc (conduit-seq l)
                      p))))
 
 (defmulti reply-proc (fn this-bogus-fn [p] (:type p)))
@@ -171,5 +175,15 @@
                     (new-proc body-proc
                               (partial loop-fn (:fn body-proc) initial-value)))
            ])
+
+(defmacro def-arr [name args & body]
+  `(def ~name (~'a-arr (fn ~args ~@body))))
+
+(defmacro def-proc [name args & body]
+  `(def ~name (conduit-proc (fn ~args ~@body))))
+
+(def pass-through
+     {:fn (fn this-fn [x]
+            [[x] this-fn])})
 
   
