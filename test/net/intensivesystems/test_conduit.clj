@@ -101,24 +101,24 @@
             (def t2 (a-arr (partial * 2)))
             (deftest test-a-arr 
                      (is (= [1 2 3]
-                            (conduit-run pl [0 1 2])))
+                            (conduit-map pl [0 1 2])))
                      (is (= [0 2 4]
-                            (conduit-run t2 [0 1 2]))))
+                            (conduit-map t2 [0 1 2]))))
 
             (deftest test-a-seq
                      (let [ts (a-seq pl t2)]
                        (is (= [12 8 10]
-                              (conduit-run ts [5 3 4])))))
+                              (conduit-map ts [5 3 4])))))
             
             (deftest test-a-nth
                      (let [tf (a-nth 0 pl)
                            tn (a-nth 1 {:fn (fn this-fn [x]
                                               [[3] this-fn])})]
                        (is (= [[4 5]]
-                              (conduit-run tf [[3 5]])))
+                              (conduit-map tf [[3 5]])))
 
                        (is (= [[15 3] [:bogus 3]]
-                              (conduit-run tn [[15 :bogus] [:bogus 15]])))))
+                              (conduit-map tn [[15 :bogus] [:bogus 15]])))))
             
             (deftest test-a-par
                      (let [tp (a-par
@@ -130,27 +130,106 @@
                                  pl
                                  {:fn (test-list-iter [[1] [] [2]])})]
                        (is (= [[:a 4 10] [:b 4 10] [:c 4 10]]
-                              (conduit-run tp [[99 3 5] [99 3 5] [99 3 5]])))
+                              (conduit-map tp [[99 3 5] [99 3 5] [99 3 5]])))
                        (is (= [[:a 4 1] [:c 4 2]]
-                              (conduit-run tp1 [[99 3 5] [99 3 5] [99 3 5]])))))
-            
+                              (conduit-map tp1 [[99 3 5] [99 3 5] [99 3 5]])))))
+
+            (deftest test-a-par-final
+                     (let [tp (a-par-final
+                                {:fn (test-list-iter [[:a] [:b] [:c]])}
+                                pl
+                                t2)
+                           tp1 (a-par-final
+                                 {:fn (test-list-iter [[:a] [:b] [:c]])}
+                                 pl
+                                 {:fn (test-list-iter [[1] [] [2]])})]
+                       (is (= [[:a 4 10] [:b 4 10] [:c 4 10]]
+                              (conduit-map tp [[99 3 5] [99 3 5] [99 3 5]])))
+                       (is (= [[:a 4 1] [:c 4 2]]
+                              (conduit-map tp1 [[99 3 5] [99 3 5] [99 3 5]])))))
+
             (deftest test-a-all
                      (let [ta (a-all pl t2)]
                        (is (= [[7 12]]
-                              (conduit-run ta [6])))))
+                              (conduit-map ta [6])))))
+            
+            (deftest test-a-all-final
+                     (let [ta (a-all-final pl t2)]
+                       (is (= [[7 12]]
+                              (conduit-map ta [6])))))
 
             (deftest test-a-select
                      (let [tc (a-select
-                                :oops {:fn (fn this-fn [x] [[] this-fn])}
+                                :oops {:fn (fn this-fn [x] [[] this-fn])} 
                                 true pl
                                 false t2)]
                        (is (= [9 6]
-                              (conduit-run tc [[:oops 83] [true 8] [:bogus 100] [false 3]])))))
+                              (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]]))))
+
+                     (let [tc (a-select
+                                :oops {:fn (fn this-fn [x] [[] this-fn])} 
+                                true pl
+                                false t2
+                                '_ pass-through)]
+                       (is (= [9 100 6]
+                              (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]])))))
+
+            (deftest test-a-select-final
+                     (let [tc (a-select-final
+                                :oops {:fn (fn this-fn [x] [[] this-fn])} 
+                                true pl
+                                false t2)]
+                       (is (= [9 6]
+                              (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]]))))
+
+                     (let [tc (a-select-final
+                                :oops {:fn (fn this-fn [x] [[] this-fn])} 
+                                true pl
+                                false t2
+                                '_ pass-through)]
+                       (is (= [9 100 6]
+                              (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]])))))
 
             (deftest test-a-loop
                      (let [bp1 (a-arr (partial apply +))]
-                       (is (= [0 1 3 6 10]
-                              (conduit-run (a-loop bp1 0) (range 5))))))
+                       (is (= [0 1 3 6 10 15 21]
+                              (conduit-map (a-loop bp1 0) (range 7))))))
+
+(with-arrow conduit
+    (def inc-every-third (a-seq
+                           (a-loop
+                             (a-seq
+                               (a-all
+                                 (a-arr first)
+                                 pass-through)
+                               (a-select
+                                 3 (a-par
+                                     (a-arr (constantly 0))
+                                     (a-arr inc))
+                                 '_ (a-arr identity)))
+                             1
+                             (a-seq (a-arr first)
+                                    (a-arr inc)))
+                           (a-arr second)))
+
+    (is (= [0 0 1 0 0 1 0 0 1]
+           (conduit-map inc-every-third (repeat 9 0)))))
+            (deftest test-pass-through
+                     (is (= (range 10)
+                            (conduit-map pass-through (range 10)))))
+
+            (deftest test-a-except
+                     (let [te (a-arr (fn [x]
+                                       (when (even? x)
+                                         (throw (Exception. "An even int")))
+                                       (* 2 x)))]
+                       (is (thrown? Exception
+                                    (conduit-map te (range 5))))
+
+                       (is (= [nil 2 nil 6 nil]
+                              (conduit-map (a-except te
+                                                     (a-arr (constantly nil)))
+                                           (range 5))))))
             )
 
 (run-tests)
