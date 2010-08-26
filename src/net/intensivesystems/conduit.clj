@@ -160,7 +160,7 @@
                    (new-proc {} (fn this-fn [x]
                                   [[(f x)] this-fn])))
 
-           a-seq (fn [& ps]
+           a-comp (fn [& ps]
                    (reduce seq-proc ps))
           
            a-nth (fn [n p]
@@ -174,7 +174,7 @@
                                    (map scatter-gather-fn rp))}))
 
            a-all (fn [& ps]
-                   (a-seq (a-arr (partial repeat (count ps)))
+                   (a-comp (a-arr (partial repeat (count ps)))
                           (apply a-par ps)))
 
            a-select (fn [& vp-pairs]
@@ -207,22 +207,6 @@
          [])
    :parts (:parts p)})
 
-(defmacro a-except [p catch-p]
-  `(~'a-seq
-       (new-proc ~p
-                 (partial (fn this-fn# [f# x#]
-                            (try
-                              (let [[new-x# new-f#] (f# x#)]
-                                [[['_ (first new-x#)]]
-                                 (partial this-fn# new-f#)])
-                              (catch Exception e#
-                                [[[Exception [e# x#]]]
-                                 (partial this-fn# f#)])))
-                          (:fn ~p)))
-       (~'a-select
-           Exception ~catch-p
-           '_ pass-through)))
-
 (with-arrow conduit
             (defn final-par-fn [fs xs]
               (let [[new-xs new-fs] (split-results (map #(%1 %2) fs xs))
@@ -237,11 +221,11 @@
                              (map :parts ps))
                :fn (partial final-par-fn
                             (map (comp :fn
-                                       (partial a-seq {}))
+                                       (partial a-comp {}))
                                  ps))})
 
             (defn a-all-final [& ps]
-              (a-seq (a-arr (partial repeat (count ps)))
+              (a-comp (a-arr (partial repeat (count ps)))
                      (apply a-par-final ps)))
 
             (defn final-select-fn [selection-map [v x]]
@@ -257,7 +241,7 @@
             (defn a-select-final [& vp-pairs]
               (let [pair-map (apply hash-map vp-pairs)
                     selection-map (map-vals (comp :fn
-                                                  (partial a-seq {})) 
+                                                  (partial a-comp {})) 
                                             pair-map)]
                 {:parts (apply merge-with merge
                                (map :parts (vals pair-map)))
@@ -265,4 +249,20 @@
 
             (def pass-through
               (a-arr identity)))
+
+(defmacro a-except [p catch-p]
+  `(~'a-comp
+       (new-proc ~p
+                 (partial (fn this-fn# [f# x#]
+                            (try
+                              (let [[new-x# new-f#] (f# x#)]
+                                [[['_ (first new-x#)]]
+                                 (partial this-fn# new-f#)])
+                              (catch Exception e#
+                                [[[Exception [e# x#]]]
+                                 (partial this-fn# f#)])))
+                          (:fn ~p)))
+       (~'a-select
+           Exception ~catch-p
+           '_ pass-through)))
 

@@ -14,9 +14,9 @@
 (with-arrow conduit
    (def conduit-inc (a-arr inc)))
 
-;; a-seq
+;; a-comp
 (with-arrow conduit
-   (def inc-ints (a-seq ints conduit-inc)))
+   (def inc-ints (a-comp ints conduit-inc)))
 
 (is (= [1 2 3 4 5]
        (a-run inc-ints)))
@@ -30,7 +30,7 @@
 
 (is (= [[1 -1] [2 0] [3 1] [4 2] [5 3]]
        (with-arrow conduit
-                   (a-run (a-seq ints inc-n-dec)))))
+                   (a-run (a-comp ints inc-n-dec)))))
 
 ;; conduit-map
 (is (= [[1 -1] [2 0] [3 1] [4 2] [5 3]]
@@ -48,7 +48,7 @@
 
 ;; a-all constructed from a-par
 (with-arrow conduit
-   (def new-inc-n-dec (a-seq (a-arr (partial repeat 2))
+   (def new-inc-n-dec (a-comp (a-arr (partial repeat 2))
                              par-inc-n-dec)))
 
 (is (= [[1 -1] [2 0] [3 1] [4 2] [5 3]]
@@ -111,14 +111,14 @@
                     3 inc-reset-state
                     '_ (a-arr identity)))
             
-    (def inc-on-3-with-state (a-seq
+    (def inc-on-3-with-state (a-comp
                                extract-state-value
                                inc-on-3))
 
-    (def update-state (a-seq (a-arr first)
+    (def update-state (a-comp (a-arr first)
                              conduit-inc))
             
-    (def inc-every-third (a-seq
+    (def inc-every-third (a-comp
                            (a-loop
                              inc-on-3-with-state
                              1

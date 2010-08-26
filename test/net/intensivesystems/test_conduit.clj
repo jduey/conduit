@@ -105,8 +105,8 @@
                      (is (= [0 2 4]
                             (conduit-map t2 [0 1 2]))))
 
-            (deftest test-a-seq
-                     (let [ts (a-seq pl t2)]
+            (deftest test-a-comp
+                     (let [ts (a-comp pl t2)]
                        (is (= [12 8 10]
                               (conduit-map ts [5 3 4])))))
             
@@ -196,9 +196,9 @@
                               (conduit-map (a-loop bp1 0) (range 7))))))
 
 (with-arrow conduit
-    (def inc-every-third (a-seq
+    (def inc-every-third (a-comp
                            (a-loop
-                             (a-seq
+                             (a-comp
                                (a-all
                                  (a-arr first)
                                  pass-through)
@@ -208,7 +208,7 @@
                                      (a-arr inc))
                                  '_ (a-arr identity)))
                              1
-                             (a-seq (a-arr first)
+                             (a-comp (a-arr first)
                                     (a-arr inc)))
                            (a-arr second)))
 
