@@ -1,17 +1,21 @@
 # conduit
 
-FIXME: write description
+A library for doing stream processing easily in Clojure
 
 ## Usage
 
-FIXME: write
+Add:
+
+[net.intensivesystems/conduit "0.5.0-SNAPSHOT"]
+
+to project.clj
 
 ## Installation
 
-FIXME: write
+
 
 ## License
 
-Copyright (C) 2010 FIXME
+Copyright (C) 2010 Jim Duey
 
-Distributed under the Eclipse Public License, the same as Clojure.n
+Distributed under the BSD License.
