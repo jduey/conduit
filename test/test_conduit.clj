@@ -1,8 +1,8 @@
-(ns net.intensivesystems.test-conduit
-  (:use net.intensivesystems.conduit :reload-all)
+(ns test-conduit
+  (:use conduit :reload-all)
   (:use
      clojure.test
-     net.intensivesystems.arrows))
+     arrows))
 
 (use-fixtures :each #_(fn [f] (println) (f)))
 

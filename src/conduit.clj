@@ -1,7 +1,7 @@
-(ns net.intensivesystems.conduit
+(ns conduit
   (:use
      [clojure.contrib.seq-utils :only [indexed]]
-     net.intensivesystems.arrows))
+     arrows))
 
 (defn conduit-proc [proc-fn]
   {:fn (fn this-fn [x]
