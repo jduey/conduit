@@ -18,7 +18,7 @@
   {:fn (conduit-seq-fn l)})
 
 (defn run-proc [f]
-  "execute a stream processor function over a list of input values"
+  "execute a stream processor function"
   (when f
     (let [[new-x new-f] (f nil)]
       (if (empty? new-x)
@@ -83,16 +83,18 @@
           new-x (if (empty? y)
                   y
                   [(assoc x n (first y))])]
-      (if (= f new-f)
-        [new-x this-fn]
-        [new-x (nth-fn n new-f)]))))
+      (cond
+        (nil? new-f) [new-x nil]
+        (= f new-f) [new-x this-fn]
+        :else [new-x (nth-fn n new-f)]))))
 
 (defmulti scatter-gather-fn (fn [p] (:type p)))
 
 (defn proc-fn-future [f x]
   (fn []
     (let [[new-x new-f] (f x)]
-      [new-x (partial proc-fn-future new-f)])))
+      [new-x (when new-f
+               (partial proc-fn-future new-f))])))
 
 (defmethod scatter-gather-fn :default [p]
   (partial proc-fn-future (:fn p)))
@@ -111,34 +113,40 @@
                 []
                 (vector (apply concat new-xs)))]
     [new-x
-     (partial par-fn new-fs)]))
+     (when (every? boolean new-fs)
+       (partial par-fn new-fs))]))
 
 (defn loop-fn
   ([body-fn prev-x curr-x]
    (let [[new-x new-f] (body-fn [prev-x curr-x])]
-     (if (empty? new-x)
-       [new-x (partial loop-fn new-f prev-x)]
-       [new-x (partial loop-fn new-f (first new-x))])))
+     [new-x
+      (cond
+        (nil? new-f) nil
+        (empty? new-x) (partial loop-fn new-f prev-x)
+        :else (partial loop-fn new-f (first new-x)))]))
   ([body-fn feedback-fn prev-x curr-x]
    (let [[new-x new-f] (body-fn [prev-x curr-x])
-         [fb-x new-fb-f] (if (empty? new-x)
-                              [prev-x feedback-fn]
-                              (feedback-fn (first new-x)))]
-     (if (empty? fb-x)
-       [new-x (partial loop-fn new-f new-fb-f prev-x)]
-       [new-x (partial loop-fn new-f new-fb-f (first fb-x))]))))
+         [fb-x new-fb-f] (if-not (empty? new-x)
+                           (feedback-fn (first new-x)))]
+     [new-x
+      (cond
+        (nil? new-f) nil
+        (empty? new-x) (partial loop-fn new-f feedback-fn prev-x)
+        (nil? new-fb-f) nil
+        (empty? fb-x) (partial loop-fn new-f new-fb-f prev-x)
+        :else (partial loop-fn new-f new-fb-f (first fb-x)))])))
 
 (def new-id (comp str gensym))
 
 (defn select-fn [selection-map [v x]]
-  (let [v (if (contains? selection-map v)
-            v
-            '_)]
-    (if-let [f (get selection-map v)]
-      (let [[new-x new-f] ((f x))]
-        [new-x (partial select-fn 
-                        (assoc selection-map v new-f))])
-      [[] (partial select-fn selection-map)])))
+  (if-let [f (if (contains? selection-map v)
+               (get selection-map v)
+               (get selection-map '_))]
+    (let [[new-x new-f] ((f x))]
+      [new-x (when new-f
+               (partial select-fn 
+                        (assoc selection-map v new-f)))])
+    [[] (partial select-fn selection-map)]))
 
 (defn map-vals [f m]
   (into {} (map (fn [[k v]]
@@ -175,7 +183,7 @@
 
            a-all (fn [& ps]
                    (a-comp (a-arr (partial repeat (count ps)))
-                          (apply a-par ps)))
+                           (apply a-par ps)))
 
            a-select (fn [& vp-pairs]
                       (let [pair-map (apply hash-map vp-pairs)]
