@@ -165,29 +165,41 @@
 
 (defarrow conduit
           [a-arr (fn [f]
-                   (new-proc {} (fn this-fn [x]
-                                  [[(f x)] this-fn])))
+                   (new-proc {:created-by :a-arr
+                              :args [f]}
+                             (fn this-fn [x]
+                               [[(f x)] this-fn])))
 
            a-comp (fn [& ps]
-                   (reduce seq-proc ps))
+                    (assoc (reduce seq-proc ps)
+                           :created-by :a-comp
+                           :args ps))
           
            a-nth (fn [n p]
-                   (new-proc p (nth-fn n (:fn p))))
+                   (assoc (new-proc p (nth-fn n (:fn p)))
+                          :created-by :a-nth
+                          :args [n p]))
                    
            a-par (fn [& ps]
                    (let [rp (map reply-proc ps)]
-                     {:parts (apply merge-with merge
+                     {:created-by :a-par
+                      :args ps
+                      :parts (apply merge-with merge
                                     (map :parts rp))
                       :fn (partial par-fn
                                    (map scatter-gather-fn rp))}))
 
            a-all (fn [& ps]
-                   (a-comp (a-arr (partial repeat (count ps)))
-                           (apply a-par ps)))
+                   (assoc (a-comp (a-arr (partial repeat (count ps)))
+                                  (apply a-par ps))
+                          :created-by :a-all
+                          :args ps))
 
            a-select (fn [& vp-pairs]
                       (let [pair-map (apply hash-map vp-pairs)]
-                        {:parts (apply merge-with merge
+                        {:created-by :a-select
+                         :args pair-map
+                         :parts (apply merge-with merge
                                        (map (comp :parts reply-proc)
                                             (vals pair-map)))
                          :fn (partial select-fn
@@ -196,11 +208,15 @@
 
            a-loop (fn 
                     ([body-proc initial-value]
-                     (new-proc body-proc
-                               (partial loop-fn (:fn body-proc) initial-value)))
+                     (assoc (new-proc body-proc
+                                      (partial loop-fn (:fn body-proc) initial-value))
+                            :created-by :a-loop
+                            :args [body-proc initial-value]))
                     ([body-proc initial-value feedback-proc]
-                     (new-proc body-proc
-                               (partial loop-fn (:fn body-proc) (:fn feedback-proc) initial-value))))
+                     (assoc (new-proc body-proc
+                                      (partial loop-fn (:fn body-proc) (:fn feedback-proc) initial-value))
+                            :created-by :a-loop
+                            :args [body-proc initial-value feedback-proc])))
            ])
 
 (defmacro def-arr [name args & body]
@@ -256,7 +272,28 @@
                  :fn (partial final-select-fn selection-map)}))
 
             (def pass-through
-              (a-arr identity)))
+              (a-arr identity))
+            
+            (defn- for-test-conduit [p]
+              (condp = (:created-by p)
+                :a-arr (select-keys p [:fn])
+                :a-comp (apply a-comp (map for-test-conduit (:args p)))
+                :a-par (apply a-par (map for-test-conduit (:args p)))
+                :a-all (apply a-all (map for-test-conduit (:args p)))
+                :a-select (apply a-select (map-vals for-test-conduit (:args p)))
+                :a-loop (let [[bp iv fb] (:args p)]
+                          (if fb
+                            (a-loop (for-test-conduit bp)
+                                    iv
+                                    (for-test-conduit fb))
+                            (a-loop (for-test-conduit bp)
+                                    iv)))))
+            
+            (defn test-conduit [p]
+              (for-test-conduit p))
+            
+            (defn test-conduit-fn [p]
+              (comp first (:fn (test-conduit p)))))
 
 (defmacro a-except [p catch-p]
   `(~'a-comp

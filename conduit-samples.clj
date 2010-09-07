@@ -1,25 +1,27 @@
-(ns net.intensivesystems.conduit-samples
-  (:use net.intensivesystems.conduit :reload-all)
+(ns conduit-samples
+  (:use conduit :reload-all)
   (:use
      clojure.test
-     net.intensivesystems.arrows))
-
-;; conduit-seq
-(def ints (conduit-seq (range 5)))
-
-(is (= [0 1 2 3 4]
-      (a-run ints)))
+     arrows))
 
 ;; a-arr
 (with-arrow conduit
-   (def conduit-inc (a-arr inc)))
+   (def conduit-inc (a-arr inc))
+
+   (def-arr conduit-double [x]
+            (* 2 x)))
+
+(is (= [1 2 3 4 5]
+       (conduit-map conduit-inc
+                    (range 5))))
 
 ;; a-comp
 (with-arrow conduit
-   (def inc-ints (a-comp ints conduit-inc)))
+   (def inc-ints (a-comp conduit-inc conduit-double)))
 
-(is (= [1 2 3 4 5]
-       (a-run inc-ints)))
+(is (= [2 4 6 8 10]
+       (conduit-map inc-ints
+                    (range 5))))
 
 ;; a-all
 (with-arrow conduit
@@ -28,11 +30,6 @@
    (def inc-n-dec (a-all conduit-inc
                          conduit-dec)))
 
-(is (= [[1 -1] [2 0] [3 1] [4 2] [5 3]]
-       (with-arrow conduit
-                   (a-run (a-comp ints inc-n-dec)))))
-
-;; conduit-map
 (is (= [[1 -1] [2 0] [3 1] [4 2] [5 3]]
        (conduit-map inc-n-dec
                     (range 5))))
