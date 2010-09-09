@@ -487,4 +487,14 @@
                                            (range 5))))))
             )
 
+(deftest test-test-conduit
+         (with-arrow conduit
+                     (def-proc bogus [x]
+                               [(inc x)]))
+
+         (def tf (test-conduit bogus)))
+
+
+
+
 (run-tests)

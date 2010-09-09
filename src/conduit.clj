@@ -4,8 +4,9 @@
      arrows))
 
 (defn conduit-proc [proc-fn]
-  {:fn (fn proc [x]
-         [(proc-fn x) proc])})
+  {:created-by :a-arr
+   :fn (fn this-fn [x]
+         [(proc-fn x) this-fn])})
 
 (defn conduit-seq-fn [l]
   (when (seq l)
