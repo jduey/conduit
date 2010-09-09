@@ -4,12 +4,12 @@
      arrows))
 
 (defn conduit-proc [proc-fn]
-  {:fn (fn this-fn [x]
-         [(proc-fn x) this-fn])})
+  {:fn (fn proc [x]
+         [(proc-fn x) proc])})
 
 (defn conduit-seq-fn [l]
   (when (seq l)
-    (fn [x]
+    (fn conduit-seq [x]
       [[(first l)] (conduit-seq-fn (rest l))])))
 
 (defn conduit-seq [l]
@@ -44,14 +44,14 @@
   (cond
     (nil? f1) f2
     (nil? f2) f1
-    :else (fn this-fn [x]
+    :else (fn a-comp [x]
             (let [[x1 new1] (f1 x)
                   [x2 new2] (if (empty? x1)
                               [x1 f2]
                               (f2 (first x1)))]
               (cond
                 (and (= f1 new1) (= f2 new2))
-                [x2 this-fn]
+                [x2 a-comp]
 
                 (or (not new1) (not new2))
                 [x2 nil]
@@ -77,7 +77,7 @@
 (defn nth-fn [n f]
   "creates a processor function that always applies a function to the
   nth element of a given input vector, returning a new vector"
-  (fn this-fn [x]
+  (fn a-nth [x]
     (let [x (ensure-vec x)
           [y new-f] (f (nth x n))
           new-x (if (empty? y)
@@ -85,7 +85,7 @@
                   [(assoc x n (first y))])]
       (cond
         (nil? new-f) [new-x nil]
-        (= f new-f) [new-x this-fn]
+        (= f new-f) [new-x a-nth]
         :else [new-x (nth-fn n new-f)]))))
 
 (defmulti scatter-gather-fn (fn [p] (:type p)))
@@ -167,8 +167,8 @@
           [a-arr (fn [f]
                    (new-proc {:created-by :a-arr
                               :args [f]}
-                             (fn this-fn [x]
-                               [[(f x)] this-fn])))
+                             (fn a-arr [x]
+                               [[(f x)] a-arr])))
 
            a-comp (fn [& ps]
                     (assoc (reduce seq-proc ps)
@@ -220,13 +220,13 @@
            ])
 
 (defmacro def-arr [name args & body]
-  `(def ~name (~'a-arr (fn ~args ~@body))))
+  `(def ~name (~'a-arr (fn ~name ~args ~@body))))
 
 (defmacro def-proc [name args & body]
-  `(def ~name (conduit-proc (fn ~args ~@body))))
+  `(def ~name (conduit-proc (fn ~name ~args ~@body))))
 
 (defn disperse [p]
-  {:fn (fn [xs]
+  {:fn (fn disperse [xs]
          (dorun (conduit-map p xs))
          [])
    :parts (:parts p)})
@@ -298,14 +298,14 @@
 (defmacro a-except [p catch-p]
   `(~'a-comp
        (new-proc ~p
-                 (partial (fn this-fn# [f# x#]
+                 (partial (fn a-except# [f# x#]
                             (try
                               (let [[new-x# new-f#] (f# x#)]
                                 [[['_ (first new-x#)]]
-                                 (partial this-fn# new-f#)])
+                                 (partial a-except# new-f#)])
                               (catch Exception e#
                                 [[[Exception [e# x#]]]
-                                 (partial this-fn# f#)])))
+                                 (partial a-except# f#)])))
                           (:fn ~p)))
        (~'a-select
            Exception ~catch-p
