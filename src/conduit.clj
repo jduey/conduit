@@ -31,14 +31,6 @@
 (defn a-run [p]
   (run-proc (:fn p)))
 
-;; mutli-method to generate a new stream processor from a
-;; template proc and a processor function
-(defmulti new-proc (fn [p f] (:type p)))
-
-(defmethod new-proc :default [p f]
-  "default stream processor constructor"
-  (assoc p :fn f))
-
 (defn seq-fn [f1 f2]
   "Link two processor functions together so that the output
   of the first is fed into the second. Returns a function."
@@ -137,8 +129,6 @@
         (empty? fb-x) (partial loop-fn new-f new-fb-f prev-x)
         :else (partial loop-fn new-f new-fb-f (first fb-x)))])))
 
-(def new-id (comp str gensym))
-
 (defn select-fn [selection-map [v x]]
   (if-let [f (if (contains? selection-map v)
                (get selection-map v)
@@ -154,11 +144,6 @@
                   [k (f v)])
                 m)))
 
-(defn conduit-map [p l]
-  (a-run
-    (seq-proc (conduit-seq l)
-              p)))
-
 (defmulti reply-proc (fn this-bogus-fn [p] (:type p)))
 
 (defmethod reply-proc :default [p]
@@ -166,20 +151,23 @@
 
 (defarrow conduit
           [a-arr (fn [f]
-                   (new-proc {:created-by :a-arr
-                              :args [f]}
-                             (fn a-arr [x]
-                               [[(f x)] a-arr])))
+                   {:created-by :a-arr
+                    :args f
+                    :fn (fn a-arr [x]
+                          [[(f x)] a-arr])})
 
            a-comp (fn [& ps]
-                    (assoc (reduce seq-proc ps)
-                           :created-by :a-comp
-                           :args ps))
+                    (let [p (reduce seq-proc ps)]
+                      {:fn (:fn p)
+                       :parts (:parts p)
+                       :created-by :a-comp
+                       :args ps}))
           
            a-nth (fn [n p]
-                   (assoc (new-proc p (nth-fn n (:fn p)))
-                          :created-by :a-nth
-                          :args [n p]))
+                   {:fn (nth-fn n (:fn p))
+                    :created-by :a-nth
+                    :args p
+                    :parts (:parts p)})
                    
            a-par (fn [& ps]
                    (let [rp (map reply-proc ps)]
@@ -209,16 +197,35 @@
 
            a-loop (fn 
                     ([body-proc initial-value]
-                     (assoc (new-proc body-proc
-                                      (partial loop-fn (:fn body-proc) initial-value))
-                            :created-by :a-loop
-                            :args [body-proc initial-value]))
+                     {:created-by :a-loop
+                      :args [body-proc initial-value]
+                      :parts (:parts body-proc)
+                      :fn (partial loop-fn (:fn body-proc) initial-value)})
                     ([body-proc initial-value feedback-proc]
-                     (assoc (new-proc body-proc
-                                      (partial loop-fn (:fn body-proc) (:fn feedback-proc) initial-value))
-                            :created-by :a-loop
-                            :args [body-proc initial-value feedback-proc])))
+                     {:created-by :a-loop
+                      :args [body-proc initial-value feedback-proc]
+                      :parts (:parts (merge-with merge
+                                                 (:parts body-proc)
+                                                 (:parts feedback-proc)))
+                      :fn (partial loop-fn (:fn body-proc)
+                                   (:fn feedback-proc)
+                                   initial-value)}))
            ])
+
+(def a-arr (conduit :a-arr))
+(def a-comp (conduit :a-comp))
+(def a-nth (conduit :a-nth))
+(def a-par (conduit :a-par))
+(def a-all (conduit :a-all))
+(def a-select (conduit :a-select))
+(def a-loop (conduit :a-loop))
+
+(defn conduit-map [p l]
+  (if-not (seq l)
+    (empty l)
+    (a-run
+      (seq-proc (conduit-seq l)
+                p))))
 
 (defmacro def-arr [name args & body]
   `(def ~name (~'a-arr (fn ~name ~args ~@body))))
@@ -228,78 +235,89 @@
 
 (defn disperse [p]
   {:fn (fn disperse [xs]
-         (dorun (conduit-map p xs))
-         [])
+         [[(conduit-map (reply-proc p)
+                        xs)]
+          disperse])
+   :created-by :disperse
+   :args p
    :parts (:parts p)})
 
-(with-arrow conduit
-            (defn final-par-fn [fs xs]
-              (let [[new-xs new-fs] (split-results (map #(%1 %2) fs xs))
-                    new-x (if (some empty? new-xs)
-                            []
-                            [(apply concat new-xs)])]
-                [new-x
-                 (partial final-par-fn new-fs)]))
+(defn disperse-final [p]
+  {:fn (fn disperse-final [xs]
+         (dorun (conduit-map p xs))
+         [[] disperse-final])
+   :created-by :disperse-final
+   :args p
+   :parts (:parts p)})
 
-            (defn a-par-final [& ps]
-              {:parts (apply merge-with merge
-                             (map :parts ps))
-               :fn (partial final-par-fn
-                            (map (comp :fn
-                                       (partial a-comp {}))
-                                 ps))})
+(defn final-par-fn [fs xs]
+  (let [[new-xs new-fs] (split-results (map #(%1 %2) fs xs))
+        new-x (if (some empty? new-xs)
+                []
+                [(apply concat new-xs)])]
+    [new-x
+     (partial final-par-fn new-fs)]))
 
-            (defn a-all-final [& ps]
-              (a-comp (a-arr (partial repeat (count ps)))
-                     (apply a-par-final ps)))
+(defn a-par-final [& ps]
+  {:parts (apply merge-with merge
+                 (map :parts ps))
+   :fn (partial final-par-fn
+                (map (comp :fn
+                           (partial a-comp {}))
+                     ps))})
 
-            (defn final-select-fn [selection-map [v x]]
-              (let [v (if (contains? selection-map v)
-                        v
-                        '_)]
-                (if-let [f (get selection-map v)]
-                  (let [[new-x new-f] (f x)]
-                    [new-x (partial final-select-fn 
-                                    (assoc selection-map v new-f))])
-                  [[] (partial final-select-fn selection-map)])))
+(defn a-all-final [& ps]
+  (a-comp (a-arr (partial repeat (count ps)))
+          (apply a-par-final ps)))
 
-            (defn a-select-final [& vp-pairs]
-              (let [pair-map (apply hash-map vp-pairs)
-                    selection-map (map-vals (comp :fn
-                                                  (partial a-comp {})) 
-                                            pair-map)]
-                {:parts (apply merge-with merge
-                               (map :parts (vals pair-map)))
-                 :fn (partial final-select-fn selection-map)}))
+(defn final-select-fn [selection-map [v x]]
+  (let [v (if (contains? selection-map v)
+            v
+            '_)]
+    (if-let [f (get selection-map v)]
+      (let [[new-x new-f] (f x)]
+        [new-x (partial final-select-fn 
+                        (assoc selection-map v new-f))])
+      [[] (partial final-select-fn selection-map)])))
 
-            (def pass-through
-              (a-arr identity))
-            
-            (defn- for-test-conduit [p]
-              (condp = (:created-by p)
-                :a-arr (select-keys p [:fn])
-                :a-comp (apply a-comp (map for-test-conduit (:args p)))
-                :a-par (apply a-par (map for-test-conduit (:args p)))
-                :a-all (apply a-all (map for-test-conduit (:args p)))
-                :a-select (apply a-select (map-vals for-test-conduit (:args p)))
-                :a-loop (let [[bp iv fb] (:args p)]
-                          (if fb
-                            (a-loop (for-test-conduit bp)
-                                    iv
-                                    (for-test-conduit fb))
-                            (a-loop (for-test-conduit bp)
-                                    iv)))))
-            
-            (defn test-conduit [p]
-              (for-test-conduit p))
-            
-            (defn test-conduit-fn [p]
-              (comp first (:fn (test-conduit p)))))
+(defn a-select-final [& vp-pairs]
+  (let [pair-map (apply hash-map vp-pairs)
+        selection-map (map-vals (comp :fn
+                                      (partial a-comp {})) 
+                                pair-map)]
+    {:parts (apply merge-with merge
+                   (map :parts (vals pair-map)))
+     :fn (partial final-select-fn selection-map)}))
+
+(def pass-through
+  (a-arr identity))
+
+(defn test-conduit [p]
+  (let [test-proc (condp = (:created-by p)
+                    :a-arr p
+                    :a-comp (apply a-comp (map test-conduit (:args p)))
+                    :a-par (apply a-par (map test-conduit (:args p)))
+                    :a-all (apply a-all (map test-conduit (:args p)))
+                    :a-select (apply a-select (mapcat (fn [[k v]]
+                                                        [k (test-conduit v)])
+                                                      (:args p)))
+                    :a-loop (let [[bp iv fb] (:args p)]
+                              (if fb
+                                (a-loop (test-conduit bp)
+                                        iv
+                                        (test-conduit fb))
+                                (a-loop (test-conduit bp)
+                                        iv)))
+                    :disperse (disperse (test-conduit (:args p)))
+                    :disperse-final (disperse-final (test-conduit (:args p))))]
+    (select-keys test-proc [:fn])))
+
+(defn test-conduit-fn [p]
+  (comp first (:fn (test-conduit p))))
 
 (defmacro a-except [p catch-p]
   `(~'a-comp
-       (new-proc ~p
-                 (partial (fn a-except# [f# x#]
+       {:fn (partial (fn a-except# [f# x#]
                             (try
                               (let [[new-x# new-f#] (f# x#)]
                                 [[['_ (first new-x#)]]
@@ -307,7 +325,9 @@
                               (catch Exception e#
                                 [[[Exception [e# x#]]]
                                  (partial a-except# f#)])))
-                          (:fn ~p)))
+                          (:fn ~p))
+        :created-by :a-arr
+        :parts (:parts ~p)}
        (~'a-select
            Exception ~catch-p
            '_ pass-through)))
