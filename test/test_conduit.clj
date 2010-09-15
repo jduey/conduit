@@ -41,7 +41,8 @@
 
 (deftest test-conduit-seq
          (is (= [:a :b :c]
-                (a-run (conduit-seq [:a :b :c])))))
+                (run-proc (get-in (conduit-seq [:a :b :c])
+                                  [:reply :fn])))))
 
 (deftest test-seq-fn
          (testing "seq-fn"
@@ -374,8 +375,9 @@
 
 (deftest test-a-nth
          (let [tf (a-nth 0 pl)
-               tn (a-nth 1 {:fn (fn this-fn [x]
-                                  [[3] this-fn])})]
+               tn (a-nth 1 {:no-reply
+                            {:fn (fn this-fn [x]
+                                  [[3] this-fn])}})]
            (is (= [[4 5]]
                   (conduit-map tf [[3 5]])))
 
@@ -384,68 +386,35 @@
 
 (deftest test-a-par
          (let [tp (a-par
-                    {:fn (test-list-iter [[:a] [:b] [:c]])}
+                    {:reply {:fn (test-list-iter [[:a] [:b] [:c]])}}
                     pl
                     t2)
                tp1 (a-par
-                     {:fn (test-list-iter [[:a] [:b] [:c]])}
+                     {:reply {:fn (test-list-iter [[:a] [:b] [:c]])}}
                      pl
-                     {:fn (test-list-iter [[1] [] [2]])})]
+                     {:reply {:fn (test-list-iter [[1] [] [2]])}})]
            (is (= [[:a 4 10] [:b 4 10] [:c 4 10]]
-                  (conduit-map tp [[99 3 5] [99 3 5] [99 3 5]])))
+                  (conduit-map (a-comp tp pass-through)
+                               [[99 3 5] [99 3 5] [99 3 5]])))
            (is (= [[:a 4 1] [:c 4 2]]
-                  (conduit-map tp1 [[99 3 5] [99 3 5] [99 3 5]])))))
-
-(deftest test-a-par-final
-         (let [tp (a-par-final
-                    {:fn (test-list-iter [[:a] [:b] [:c]])}
-                    pl
-                    t2)
-               tp1 (a-par-final
-                     {:fn (test-list-iter [[:a] [:b] [:c]])}
-                     pl
-                     {:fn (test-list-iter [[1] [] [2]])})]
-           (is (= [[:a 4 10] [:b 4 10] [:c 4 10]]
-                  (conduit-map tp [[99 3 5] [99 3 5] [99 3 5]])))
-           (is (= [[:a 4 1] [:c 4 2]]
-                  (conduit-map tp1 [[99 3 5] [99 3 5] [99 3 5]])))))
+                  (conduit-map (a-comp tp1 pass-through)
+                               [[99 3 5] [99 3 5] [99 3 5]])))))
 
 (deftest test-a-all
          (let [ta (a-all pl t2)]
            (is (= [[7 12]]
-                  (conduit-map ta [6])))))
-
-(deftest test-a-all-final
-         (let [ta (a-all-final pl t2)]
-           (is (= [[7 12]]
-                  (conduit-map ta [6])))))
+                  (conduit-map (a-comp ta pass-through) [6])))))
 
 (deftest test-a-select
          (let [tc (a-select
-                    :oops {:fn (fn this-fn [x] [[] this-fn])} 
+                    :oops {:no-reply {:fn (fn this-fn [x] [[] this-fn])}}
                     true pl
                     false t2)]
            (is (= [9 6]
                   (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]]))))
 
          (let [tc (a-select
-                    :oops {:fn (fn this-fn [x] [[] this-fn])} 
-                    true pl
-                    false t2
-                    '_ pass-through)]
-           (is (= [9 100 6]
-                  (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]])))))
-
-(deftest test-a-select-final
-         (let [tc (a-select-final
-                    :oops {:fn (fn this-fn [x] [[] this-fn])} 
-                    true pl
-                    false t2)]
-           (is (= [9 6]
-                  (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]]))))
-
-         (let [tc (a-select-final
-                    :oops {:fn (fn this-fn [x] [[] this-fn])} 
+                    :oops {:no-reply {:fn (fn this-fn [x] [[] this-fn])}}
                     true pl
                     false t2
                     '_ pass-through)]
@@ -489,7 +458,7 @@
                                          (a-arr (constantly nil)))
                                (range 5))))))
 
-(deftest test-test-conduit
+#_(deftest test-test-conduit
          (def-proc bogus [x]
                    [(inc x)])
 
@@ -498,7 +467,8 @@
 (deftest test-disperse
          (def make-and-dec (a-comp (a-arr range)
                                    (disperse
-                                     (a-arr dec)))) 
+                                     (a-arr dec))
+                                   pass-through)) 
          (is (= [[]
                  [-1]
                  [-1 0]
