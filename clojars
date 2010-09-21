@@ -1,0 +1,1 @@
+lein pom && lein jar && scp pom.xml conduit-0.6.0-SNAPSHOT.jar clojars@clojars.org:

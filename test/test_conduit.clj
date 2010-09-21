@@ -14,6 +14,13 @@
        (when (seq (rest l))
          (test-list-iter (rest l)))]))
 
+(defn sg-list-iter [l]
+  (fn [x]
+    (fn []
+      [(first l)
+       (when (seq (rest l))
+         (sg-list-iter (rest l)))])))
+
 (deftest test-run-proc
          (testing "run-proc"
                   (testing "should ignore empty values"
@@ -168,7 +175,7 @@
                                     (run-proc (seq-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
                                                       (partial par-fn [f4 f1])))))))))
 
-(deftest test-scatter-gather-fn
+#_(deftest test-scatter-gather-fn
          (testing "scatter-gather-fn"
                   (let [p1 {:fn (fn this-fn [x]
                                   [[(inc x)] this-fn])}
@@ -300,22 +307,17 @@
 (deftest test-select-fn
          (testing "select-fn"
                   (let [f1 (fn this-fn [x]
-                             (fn []
-                               [[(inc x)] this-fn]))
+                             [[(inc x)] this-fn])
                         f2 (fn this-fn [x]
-                             (fn []
-                               [[(dec x)] this-fn]))
+                             [[(dec x)] this-fn])
                         f3 (fn this-fn [x]
-                             (fn []
-                               [[] this-fn]))
+                             [[] this-fn])
                         f4 (fn this-fn [x]
-                             (fn []
-                               [[x] (when (not= x 5)
-                                      this-fn)]))
+                             [[x] (when (not= x 5)
+                                      this-fn)])
                         f5 (fn this-fn [x]
-                             (fn []
-                               (when (not= x 6)
-                                 [[x] this-fn])))]
+                             (when (not= x 6)
+                                 [[x] this-fn]))]
                     (testing "should work properly"
                              (is (= [1 0 3 2 5 4]
                                     (run-proc (seq-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
@@ -386,13 +388,13 @@
 
 (deftest test-a-par
          (let [tp (a-par
-                    {:reply {:fn (test-list-iter [[:a] [:b] [:c]])}}
+                    {:scatter-gather {:fn (sg-list-iter [[:a] [:b] [:c]])}}
                     pl
                     t2)
                tp1 (a-par
-                     {:reply {:fn (test-list-iter [[:a] [:b] [:c]])}}
+                     {:scatter-gather {:fn (sg-list-iter [[:a] [:b] [:c]])}}
                      pl
-                     {:reply {:fn (test-list-iter [[1] [] [2]])}})]
+                     {:scatter-gather {:fn (sg-list-iter [[1] [] [2]])}})]
            (is (= [[:a 4 10] [:b 4 10] [:c 4 10]]
                   (conduit-map (a-comp tp pass-through)
                                [[99 3 5] [99 3 5] [99 3 5]])))
@@ -458,7 +460,7 @@
                                          (a-arr (constantly nil)))
                                (range 5))))))
 
-#_(deftest test-test-conduit
+(deftest test-test-conduit
          (def-proc bogus [x]
                    [(inc x)])
 

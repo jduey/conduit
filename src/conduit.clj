@@ -76,21 +76,10 @@
           new-x (if (empty? y)
                   y
                   [(assoc x n (first y))])]
-      (cond
-        (nil? new-f) [new-x nil]
-        (= f new-f) [new-x a-nth]
-        :else [new-x (nth-fn n new-f)]))))
-
-(defmulti scatter-gather-fn (fn [p] (:type p)))
-
-(defn proc-fn-future [f x]
-  (fn []
-    (let [[new-x new-f] (f x)]
-      [new-x (when new-f
-               (partial proc-fn-future new-f))])))
-
-(defmethod scatter-gather-fn :default [p]
-  (partial proc-fn-future (:fn p)))
+      (if (= f new-f)
+        [new-x a-nth]
+        [new-x (when new-f
+                 (nth-fn n new-f))]))))
 
 (defn split-results [results]
   (reduce (fn [[new-xs new-fs] [new-x new-f]]
@@ -138,7 +127,7 @@
   (if-let [f (if (contains? selection-map v)
                (get selection-map v)
                (get selection-map '_))]
-    (let [[new-x new-f] ((f x))]
+    (let [[new-x new-f] (f x)]
       [new-x (when new-f
                (partial select-fn 
                         (assoc selection-map v new-f)))])
@@ -154,19 +143,84 @@
                         (assoc selection-map v new-f))])
       [[] (partial no-reply-select-fn selection-map)])))
 
+(defn scatter-gather-select-fn [selection-map [v x]]
+  (if-let [f (if (contains? selection-map v)
+               (get selection-map v)
+               (get selection-map '_))]
+    (let [gather-fn (f x)]
+      (fn []
+        (let [[new-x new-f] (gather-fn)]
+          [new-x (when new-f
+                   (partial scatter-gather-select-fn 
+                            (assoc selection-map v new-f)))])))
+    [[] (partial scatter-gather-select-fn selection-map)]))
+
 (defn map-vals [f m]
   (into {} (map (fn [[k v]]
                   [k (f v)])
                 m)))
 
+;; TODO: make this execute in a future
+(defn scatter-gather-comp [f sg x]
+  (let [[new-x new-f] (f x)]
+    (if (empty? new-x)
+      (fn []
+        [[] (when new-f
+              (partial scatter-gather-comp
+                       new-f
+                       sg))])
+      (let [gather-fn (sg (first new-x))]
+        (fn []
+          (let [[newer-x new-sg] (gather-fn)]
+            [newer-x (when (and new-f new-sg)
+                       (partial scatter-gather-comp
+                                new-f
+                                new-sg))]))))))
+
+(defn scatter-gather-nth [n sg x]
+  (let [x (ensure-vec x)
+        gather-fn (sg (nth x n))]
+    (fn []
+      (let [[y new-sg] (gather-fn)]
+        (if (empty? y)
+          [[] (when new-sg
+                (partial scatter-gather-nth
+                         n
+                         new-sg))]
+          [[(assoc x n (first y))]
+           (when new-sg
+             (scatter-gather-nth n new-sg))])))))
+
+(defn a-par-scatter-gather [sgs x]
+  (let [x (ensure-vec x)
+        gather-fns (doall
+                     (map #(%1 %2)
+                          sgs
+                          x))]
+
+    (fn []
+      (let [[new-xs new-sgs] (split-results
+                               (map #(%) gather-fns))
+            new-x (if (some empty? new-xs)
+                    []
+                    (vector (apply concat new-xs)))]
+        [new-x
+         (when (every? boolean new-sgs)
+           (partial a-par-scatter-gather
+                    new-sgs))])))) 
+
 (defarrow conduit
           [a-arr (fn [f]
-                   (let [new-proc {:fn (fn a-arr [x]
-                                         [[(f x)] a-arr])}]
+                   (let [new-fn (fn a-arr [x]
+                                  [[(f x)] a-arr])
+                         new-proc {:fn new-fn}]
                      {:created-by :a-arr
                       :args f
                       :no-reply new-proc
-                      :reply new-proc}))
+                      :reply new-proc
+                      :scatter-gather {:fn (fn a-arr-sg [x]
+                                             (fn []
+                                               [[(f x)] a-arr-sg]))}}))
 
            a-comp (fn [& ps]
                     (let [first-ps (map :reply (butlast ps))
@@ -178,27 +232,36 @@
                        :created-by :a-comp
                        :args ps
                        :reply {:fn reply-fn}
-                       :no-reply {:fn no-reply-fn}}))
+                       :no-reply {:fn no-reply-fn}
+                       :scatter-gather {:fn (partial scatter-gather-comp
+                                                     (:fn p)
+                                                     (get-in last-p [:scatter-gather :fn]))}}))
           
            a-nth (fn [n p]
                    {:created-by :a-nth
                     :args [n p]
                     :parts (:parts p)
                     :reply {:fn (nth-fn n (:fn (:reply p)))}
-                    :no-reply {:fn (nth-fn n (:fn (:no-reply p)))}})
+                    :no-reply {:fn (nth-fn n (:fn (:no-reply p)))}
+                    :scatter-gather {:fn (partial scatter-gather-nth
+                                                  n
+                                                  (:scatter-gather p))}})
                    
            a-par (fn [& ps]
                    {:created-by :a-par
                     :args ps
                     :parts (merge-parts ps)
                     :reply {:fn (partial par-fn
-                                 (map (comp scatter-gather-fn :reply)
+                                 (map (comp :fn :scatter-gather)
                                       ps))}
                     :no-reply {:fn (partial no-reply-par-fn
                                             (map (comp :fn
                                                        :no-reply
                                                        (partial a-comp {}))
-                                                 ps))}})
+                                                 ps))}
+                    :scatter-gather {:fn (partial a-par-scatter-gather
+                                                  (map (comp :fn :scatter-gather)
+                                                       ps))}})
 
            a-all (fn [& ps]
                    (assoc (a-comp (a-arr (partial repeat (count ps)))
@@ -212,13 +275,16 @@
                          :args pair-map
                          :parts (merge-parts (vals pair-map))
                          :reply {:fn (partial select-fn
-                                              (map-vals (comp scatter-gather-fn :reply)
+                                              (map-vals (comp :fn :reply)
                                                         pair-map))}
                          :no-reply {:fn (partial no-reply-select-fn
                                                  (map-vals (comp :fn
                                                                  :no-reply
                                                                  (partial a-comp {})) 
-                                                           pair-map))}}))
+                                                           pair-map))}
+                         :scatter-gather {:fn (partial scatter-gather-select-fn
+                                                       (map-vals (comp :fn :reply)
+                                                                 pair-map))}}))
 
            a-loop (fn 
                     ([body-proc initial-value]
