@@ -50,10 +50,10 @@
          (is (= [:a :b :c]
                 (a-run (:reply (conduit-seq [:a :b :c]))))))
 
-(deftest test-seq-fn
-         (testing "seq-fn"
+(deftest test-comp-fn
+         (testing "comp-fn"
                   (testing "should work properly"
-                           (let [tf (seq-fn (fn this-fn [x]
+                           (let [tf (comp-fn (fn this-fn [x]
                                               (if (even? x)
                                                 [[] this-fn]
                                                 [[x] this-fn]))
@@ -61,17 +61,17 @@
                                               [[(dec x)] this-fn]))]
                              (is (= [[0] tf] (tf 1)))
                              (is (= [0 2]
-                                    (a-run (seq-fn (test-list-iter [[1] [2] [3]])
+                                    (a-run (comp-fn (test-list-iter [[1] [2] [3]])
                                                       tf))))))
 
                   (testing "should handle empty values"
-                           (let [tf (seq-fn (test-list-iter [[1] [] [2]])
+                           (let [tf (comp-fn (test-list-iter [[1] [] [2]])
                                             (fn this-fn [x]
                                               [[(dec x)] this-fn]))]
                              (is (= [0 1]
                                     (a-run tf)))))
          
-                  (let [tf (seq-fn (test-list-iter [[1] [2] [3] [4] [5]])
+                  (let [tf (comp-fn (test-list-iter [[1] [2] [3] [4] [5]])
                                    (fn this-fn [x]
                                      [[x] (when (< x 3)
                                             this-fn)]))]
@@ -81,11 +81,11 @@
 
                     (testing "should handle the second stream stopping"
                              (is (= [2 3 4]
-                                    (a-run (seq-fn tf
+                                    (a-run (comp-fn tf
                                                       (fn this-fn [x]
                                                         [[(inc x)] this-fn])))))))
                   
-                  (let [tf (seq-fn (test-list-iter [[1] [2] [3] [4] [5]])
+                  (let [tf (comp-fn (test-list-iter [[1] [2] [3] [4] [5]])
                                    (fn this-fn [x]
                                      (when (< x 3)
                                        [[x] this-fn])))]
@@ -95,7 +95,7 @@
 
                     (testing "should handle the second stream stopping with an empty value"
                              (is (= [2 3]
-                                    (a-run (seq-fn tf
+                                    (a-run (comp-fn tf
                                                       (fn this-fn [x]
                                                         [[(inc x)] this-fn])))))))))
 
@@ -104,13 +104,13 @@
                   (testing "should work properly"
                            (let [tf (nth-fn 0 (test-list-iter [[1] [2] [3]]))]
                              (is (= [[1 1] [2 2] [3 3]] 
-                                    (a-run (seq-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
+                                    (a-run (comp-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
                                                       tf))))))
 
                   (testing "should handle empty values"
                            (let [tf (nth-fn 0 (test-list-iter [[] [2] [3]]))]
                              (is (= [[2 2] [3 3]] 
-                                    (a-run (seq-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
+                                    (a-run (comp-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
                                                       tf))))))
 
                   (testing "should handle the stream stopping"
@@ -118,7 +118,7 @@
                                                 [[3] (when (not= x :b)
                                                        this-fn)]))]
                              (is (= [[3 1] [3 2]] 
-                                    (a-run (seq-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
+                                    (a-run (comp-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
                                                       tf))))))
 
                   (testing "should handle the stream stopping with an empty value"
@@ -126,7 +126,7 @@
                                                 (when (not= x :c)
                                                        [[3] this-fn])))]
                              (is (= [[3 1] [3 2]] 
-                                    (a-run (seq-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
+                                    (a-run (comp-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
                                                       tf))))))))
 
 (deftest test-par-fn
@@ -151,27 +151,27 @@
 
                     (testing "should handle empty values"
                              (is (= [[4 2] [9 7]]
-                                    (a-run (seq-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
+                                    (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
                                                       (partial par-fn [f1 f2]))))))
 
                     (testing "should handle the first proc stopping"
                              (is (= [[6 5] [4 3]]
-                                    (a-run (seq-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
+                                    (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
                                                       (partial par-fn [f1 f3]))))))
 
                     (testing "should handle second proc stopping"
                              (is (= [[5 6] [3 4]]
-                                    (a-run (seq-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
+                                    (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
                                                       (partial par-fn [f3 f1]))))))
 
                     (testing "should handle the first proc stopping with an empty value"
                              (is (= [[6 5] [4 3]]
-                                    (a-run (seq-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
+                                    (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
                                                       (partial par-fn [f1 f4]))))))
 
                     (testing "should handle second proc stopping with an empty value"
                              (is (= [[5 6] [3 4]]
-                                    (a-run (seq-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
+                                    (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
                                                       (partial par-fn [f4 f1])))))))))
 
 #_(deftest test-scatter-gather-fn
@@ -189,22 +189,22 @@
                                     [[x] this-fn]))]
                     (testing "should work properly"
                              (is (= [[1 -1] [2 0] [3 1] [4 2] [5 3] [6 4] [7 5]]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [% %]) (range 7)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
                                                       (partial par-fn (map scatter-gather-fn [p1 p2])))))))
 
                     (testing "should handle empty values"
                              (is (= [[1 :a] [2 :b] [4 :a] [5 :b] [7 :a]]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [% %]) (range 7)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
                                                       (partial par-fn (map scatter-gather-fn [p1 p3])))))))
 
                     (testing "should handle a stream stopping"
                              (is (= [[1 0] [2 1] [3 2] [4 3] [5 4]]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [% %]) (range 7)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
                                                       (partial par-fn (map scatter-gather-fn [p1 p4])))))))
 
                     (testing "should handle a stream stopping with an empty value"
                              (is (= [[1 0] [2 1] [3 2] [4 3] [5 4]]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [% %]) (range 7)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
                                                       (partial par-fn (map scatter-gather-fn [p1 p5]))))))))))
 
 (deftest test-loop-fn
@@ -213,7 +213,7 @@
                            (let [tf (fn this-fn [[px cx]]
                                       [[(+ px cx)] this-fn])]
                              (is (= [0 1 3 6 10]
-                                    (a-run (seq-fn (test-list-iter (map vector (range 5)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 5)))
                                                       (partial loop-fn tf 0) ))))))
 
                   (testing "should handle empty values"
@@ -222,7 +222,7 @@
                                         [[] this-fn]
                                         [[(+ px cx)] this-fn]))]
                              (is (= [1 4 9 16]
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf 0) ))))))
 
                   (testing "should handle a stream ending"
@@ -230,7 +230,7 @@
                                       [[cx] (when (not= cx 6)
                                               this-fn)])]
                              (is (= (range 7)
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf 0)))))))
                   
                   (testing "should handle a stream ending with empty value"
@@ -239,7 +239,7 @@
                                         [[cx] this-fn]
                                         [[] nil]))]
                              (is (= (range 6)
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf 0))))))))
          (testing "loop-fn (with feedback function)"
                   (testing "should work as intended"
@@ -248,7 +248,7 @@
                                  fb (fn this-fn [x]
                                       [[(inc x)] this-fn])]
                              (is (= [0 2 5 9 14]
-                                    (a-run (seq-fn (test-list-iter (map vector (range 5)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 5)))
                                                       (partial loop-fn tf fb 0) ))))))
 
                   (testing "should handle empty values"
@@ -259,7 +259,7 @@
                                  fb (fn this-fn [x]
                                       [[(inc x)] this-fn])]
                              (is (= [1 5 11 19]
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf fb 0) ))))))
 
                   (testing "should handle the stream ending"
@@ -269,7 +269,7 @@
                                  fb (fn this-fn [x]
                                       [[(inc x)] this-fn])]
                              (is (= (range 7)
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf fb 0)))))))
                   
                   (testing "should handle the stream ending with empty value"
@@ -280,7 +280,7 @@
                                  fb (fn this-fn [x]
                                       [[(inc x)] this-fn])]
                              (is (= (range 6)
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf 0)))))))
 
                   (testing "should handle the feedback stream ending"
@@ -290,7 +290,7 @@
                                       [[(inc x)] (when (not= x 6)
                                                    this-fn)])]
                              (is (= (range 7)
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf fb 0)))))))
                   
                   (testing "should handle the feedback stream ending with empty value"
@@ -300,7 +300,7 @@
                                       (when (not= x 6)
                                         [[(inc x)] this-fn]))]
                              (is (= (range 7)
-                                    (a-run (seq-fn (test-list-iter (map vector (range 9)))
+                                    (a-run (comp-fn (test-list-iter (map vector (range 9)))
                                                       (partial loop-fn tf fb 0)))))))))
 
 (deftest test-select-fn
@@ -319,37 +319,37 @@
                                  [[x] this-fn]))]
                     (testing "should work properly"
                              (is (= [1 0 3 2 5 4]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
                                                       (partial select-fn {true f1
                                                                           false f2}))))))
 
                     (testing "should use the default proc"
                              (is (= [1 0 3 2 5 4]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
                                                       (partial select-fn {true f1
                                                                           '_ f2}))))))
 
                     (testing "should work when no match found"
                              (is (= [0 2 4]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
                                                       (partial select-fn {:bogus f1
                                                                           false f2}))))))
 
                     (testing "should handle empty values from a proc"
                              (is (= [1 3 5]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [(even? %) %]) (range 6)))
                                                       (partial select-fn {true f1
                                                                           false f3}))))))
 
                     (testing "should handle a stream stopping"
                              (is (= [1 1 3 3 5 5]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [(even? %) %]) (range 10)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [(even? %) %]) (range 10)))
                                                       (partial select-fn {true f1
                                                                           false f4}))))))
 
                     (testing "should handle a stream stopping with empty value"
                              (is (= [0 0 2 2 4 4]
-                                    (a-run (seq-fn (test-list-iter (map #(vector [(even? %) %]) (range 10)))
+                                    (a-run (comp-fn (test-list-iter (map #(vector [(even? %) %]) (range 10)))
                                                       (partial select-fn {true f5
                                                                           false f2})))))))))
 

@@ -16,9 +16,10 @@
   "create a stream processor that emits the contents of a list
   regardless of what is fed to it"
   (let [new-fn (conduit-seq-fn l)]
-    {:created-by :a-arr
-     :reply new-fn
-     :no-reply new-fn}))
+    {:reply new-fn
+     :no-reply new-fn
+     :scatter-gather (fn [x]
+                       (partial new-fn x))}))
 
 (defn a-run [f]
   "execute a stream processor function"
@@ -30,7 +31,7 @@
           (cons (first new-x)
                 (a-run new-f)))))))
 
-(defn seq-fn [f1 f2]
+(defn comp-fn [f1 f2]
   "Link two processor functions together so that the output
   of the first is fed into the second. Returns a function."
   (cond
@@ -49,7 +50,7 @@
                 [x2 nil]
 
                 :else
-                [x2 (seq-fn new1 new2)])))))
+                [x2 (comp-fn new1 new2)])))))
 
 (defn ensure-vec [x-vec]
   (if (vector? x-vec)
@@ -214,9 +215,9 @@
            a-comp (fn [& ps]
                     (let [first-ps (map :reply (butlast ps))
                           last-p (last ps)
-                          p (reduce seq-fn first-ps)
-                          reply-fn (seq-fn p (:reply last-p))
-                          no-reply-fn (seq-fn p (:no-reply last-p))]
+                          p (reduce comp-fn first-ps)
+                          reply-fn (comp-fn p (:reply last-p))
+                          no-reply-fn (comp-fn p (:no-reply last-p))]
                       {:parts (merge-parts ps)
                        :created-by :a-comp
                        :args ps
@@ -304,26 +305,27 @@
   (a-arr identity))
 
 (defn a-except [p catch-p]
-  (a-comp
-    {:created-by :a-arr
-     :parts (:parts p)
-     :reply (partial (fn a-except [f x]
-                            (try
-                              (let [[new-x new-f] (f x)]
-                                [[['_ (first new-x)]]
-                                 (partial a-except new-f)])
-                              (catch Exception e
-                                [[[Exception [e x]]]
-                                 (partial a-except f)])))
-                          (:reply p))}
-    (a-select
-      Exception catch-p
-      '_ pass-through)))
+  (assoc (a-comp
+           {:parts (:parts p)
+            :reply (partial (fn a-except [f x]
+                              (try
+                                (let [[new-x new-f] (f x)]
+                                  [[['_ (first new-x)]]
+                                   (partial a-except new-f)])
+                                (catch Exception e
+                                  [[[Exception [e x]]]
+                                   (partial a-except f)])))
+                            (:reply p))}
+           (a-select
+             Exception catch-p
+             '_ pass-through))
+         :created-by :a-except
+         :args [p catch-p]))
 
 (defn conduit-map [p l]
   (if-not (seq l)
     (empty l)
-    (a-run (seq-fn (:reply (conduit-seq l))
+    (a-run (comp-fn (:reply (conduit-seq l))
                    (:no-reply p)))))
 
 (defmacro def-arr [name args & body]
@@ -332,28 +334,36 @@
 (defn conduit-proc [proc-fn]
   (let [new-fn (fn this-fn [x]
                  [(proc-fn x) this-fn])]
-  {:created-by :a-arr
-   :reply new-fn
-   :no-reply new-fn}))
+  {:reply new-fn
+   :no-reply new-fn
+   :scatter-gather (fn [x]
+                     (partial new-fn x))}))
 
 (defmacro def-proc [name args & body]
   `(def ~name (conduit-proc (fn ~name ~args ~@body))))
 
 (defn disperse [p]
-  (let [reply-proc (a-comp p pass-through)]
+  (let [reply-fn (fn disperse [xs]
+                   (if (seq xs)
+                     (let [new-x (a-run (comp-fn (conduit-seq-fn xs)
+                                                 (:reply p)))]
+                       [[new-x] disperse])
+                     [[[]] disperse]))]
     {:created-by :disperse
      :args p
      :parts (:parts p)
-     :reply (fn disperse [xs]
-                   [[(conduit-map reply-proc xs)]
-                    disperse])
+     :reply reply-fn
      :no-reply (fn disperse-final [xs]
-                      (dorun (conduit-map p xs))
-                      [[] disperse-final])}))
+                 (dorun (conduit-map p xs))
+                 [[] disperse-final])
+     :scatter-gather (fn [xs]
+                       (fn []
+                         (partial reply-fn xs)))}))
 
 (defn test-conduit [p]
   (condp = (:created-by p)
-    :a-arr p
+    nil p
+    :a-arr (a-arr (:args p))
     :a-comp (apply a-comp (map test-conduit (:args p)))
     :a-par (apply a-par (map test-conduit (:args p)))
     :a-all (apply a-all (map test-conduit (:args p)))
@@ -367,8 +377,9 @@
                         (test-conduit fb))
                 (a-loop (test-conduit bp)
                         iv)))
+    :a-except (apply a-except (map test-conduit (:args p)))
     :disperse (disperse (test-conduit (:args p)))))
 
 (defn test-conduit-fn [p]
-  (comp first (test-conduit p)))
+  (comp first (:reply (test-conduit p))))
 
