@@ -1,7 +1,7 @@
-(ns conduit
+(ns conduit.core
   (:use
      [clojure.contrib.seq-utils :only [indexed]]
-     arrows))
+     arrows.core))
 
 (defn merge-parts [ps]
   (apply merge-with merge

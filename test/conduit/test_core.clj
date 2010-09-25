@@ -1,8 +1,8 @@
-(ns test-conduit
-  (:use conduit :reload-all)
+(ns conduit.test-core
+  (:use conduit.core :reload-all)
   (:use
      clojure.test
-     arrows))
+     arrows.core))
 
 (use-fixtures :each #_(fn [f] (println) (f)))
 
