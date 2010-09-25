@@ -129,8 +129,8 @@
                                     (a-run (comp-fn (test-list-iter [[[:a 1]] [[:b 2]] [[:c 3]]])
                                                       tf))))))))
 
-(deftest test-par-fn
-         (testing "par-fn"
+(deftest test-sg-par-fn
+         (testing "sg-par-fn"
                   (let [f1 (fn this-fn [x]
                              (fn []
                                [[(inc x)] this-fn]))
@@ -147,65 +147,32 @@
                                (when (not= x 8)
                                  [[x] this-fn])))]
                     (testing "should work properly"
-                             (is (= [[5 3]] (first (par-fn [f1 f2] [4 4])))))
+                             (is (= [[5 3]] (first (sg-par-fn [f1 f2] [4 4])))))
 
                     (testing "should handle empty values"
                              (is (= [[4 2] [9 7]]
                                     (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
-                                                      (partial par-fn [f1 f2]))))))
+                                                      (partial sg-par-fn [f1 f2]))))))
 
                     (testing "should handle the first proc stopping"
                              (is (= [[6 5] [4 3]]
                                     (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
-                                                      (partial par-fn [f1 f3]))))))
+                                                      (partial sg-par-fn [f1 f3]))))))
 
                     (testing "should handle second proc stopping"
                              (is (= [[5 6] [3 4]]
                                     (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
-                                                      (partial par-fn [f3 f1]))))))
+                                                      (partial sg-par-fn [f3 f1]))))))
 
                     (testing "should handle the first proc stopping with an empty value"
                              (is (= [[6 5] [4 3]]
                                     (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
-                                                      (partial par-fn [f1 f4]))))))
+                                                      (partial sg-par-fn [f1 f4]))))))
 
                     (testing "should handle second proc stopping with an empty value"
                              (is (= [[5 6] [3 4]]
                                     (a-run (comp-fn (test-list-iter [[[5 5]] [[3 3]] [[8 8]]])
-                                                      (partial par-fn [f4 f1])))))))))
-
-#_(deftest test-scatter-gather-fn
-         (testing "scatter-gather-fn"
-                  (let [p1 (fn this-fn [x]
-                                  [[(inc x)] this-fn])
-                        p2 (fn this-fn [x]
-                                  [[(dec x)] this-fn])
-                        p3 (test-list-iter (cycle [[:a] [:b] []]))
-                        p4 (fn this-fn [x]
-                                  [[x] (when (not= x 4)
-                                         this-fn)])
-                        p5 (fn this-fn [x]
-                                  (when (not= x 5)
-                                    [[x] this-fn]))]
-                    (testing "should work properly"
-                             (is (= [[1 -1] [2 0] [3 1] [4 2] [5 3] [6 4] [7 5]]
-                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
-                                                      (partial par-fn (map scatter-gather-fn [p1 p2])))))))
-
-                    (testing "should handle empty values"
-                             (is (= [[1 :a] [2 :b] [4 :a] [5 :b] [7 :a]]
-                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
-                                                      (partial par-fn (map scatter-gather-fn [p1 p3])))))))
-
-                    (testing "should handle a stream stopping"
-                             (is (= [[1 0] [2 1] [3 2] [4 3] [5 4]]
-                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
-                                                      (partial par-fn (map scatter-gather-fn [p1 p4])))))))
-
-                    (testing "should handle a stream stopping with an empty value"
-                             (is (= [[1 0] [2 1] [3 2] [4 3] [5 4]]
-                                    (a-run (comp-fn (test-list-iter (map #(vector [% %]) (range 7)))
-                                                      (partial par-fn (map scatter-gather-fn [p1 p5]))))))))))
+                                                      (partial sg-par-fn [f4 f1])))))))))
 
 (deftest test-loop-fn
          (testing "loop-fn"
@@ -364,6 +331,9 @@
                              (range 10)))))
 
 (deftest test-a-arr 
+         (is (= (range 1 6)
+                (conduit-map (a-arr inc)
+                             (range 5))))
          (is (= [1 2 3]
                 (conduit-map pl [0 1 2])))
          (is (= [0 2 4]
@@ -387,24 +357,24 @@
 
 (deftest test-a-par
          (let [tp (a-par
-                    {:scatter-gather (sg-list-iter [[:a] [:b] [:c]])}
+                    (conduit-seq [:a :b :c])
                     pl
                     t2)
                tp1 (a-par
-                     {:scatter-gather (sg-list-iter [[:a] [:b] [:c]])}
+                     (conduit-seq [:a :b :c])
                      pl
-                     {:scatter-gather (sg-list-iter [[1] [] [2]])})]
+                     {:no-reply (test-list-iter [[1] [] [2]])})]
            (is (= [[:a 4 10] [:b 4 10] [:c 4 10]]
-                  (conduit-map (a-comp tp pass-through)
+                  (conduit-map tp
                                [[99 3 5] [99 3 5] [99 3 5]])))
            (is (= [[:a 4 1] [:c 4 2]]
-                  (conduit-map (a-comp tp1 pass-through)
+                  (conduit-map tp1
                                [[99 3 5] [99 3 5] [99 3 5]])))))
 
 (deftest test-a-all
          (let [ta (a-all pl t2)]
            (is (= [[7 12]]
-                  (conduit-map (a-comp ta pass-through) [6])))))
+                  (conduit-map ta [6])))))
 
 (deftest test-a-select
          (let [tc (a-select
@@ -468,8 +438,7 @@
 (deftest test-disperse
          (def make-and-dec (a-comp (a-arr range)
                                    (disperse
-                                     (a-arr dec))
-                                   pass-through)) 
+                                     (a-arr dec)))) 
          (is (= [[]
                  [-1]
                  [-1 0]

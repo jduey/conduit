@@ -1,6 +1,7 @@
 (ns conduit.core
   (:use
      [clojure.contrib.seq-utils :only [indexed]]
+     [clojure.pprint :only [pprint]]
      arrows.core))
 
 (defn merge-parts [ps]
@@ -78,7 +79,7 @@
           [[] []]
           results))
 
-(defn par-fn [fs xs]
+(defn sg-par-fn [fs xs]
   (let [result-fns (doall (map #(%1 %2) fs xs))
         [new-xs new-fs] (split-results (map #(%) result-fns))
         new-x (if (some empty? new-xs)
@@ -86,12 +87,15 @@
                 (vector (apply concat new-xs)))]
     [new-x
      (when (every? boolean new-fs)
-       (partial par-fn new-fs))]))
+       (partial sg-par-fn new-fs))]))
 
-;; TODO: put under unit tests
-(defn no-reply-par-fn [fs xs]
-  (let [new-fs (map #(second (%1 %2)) fs xs)]
-    [[] (partial no-reply-par-fn new-fs)]))
+;; TODO: put under unit test
+(defn par-fn [fs xs]
+  (let [[new-xs new-fs] (split-results (map #(%1 %2) fs xs))
+        new-x (if (some empty? new-xs)
+                []
+                (vector (apply concat new-xs)))]
+    [new-x (partial par-fn new-fs)]))
 
 (defn loop-fn
   ([body-fn prev-x curr-x]
@@ -241,12 +245,12 @@
                    {:created-by :a-par
                     :args ps
                     :parts (merge-parts ps)
-                    :reply (partial par-fn
+                    :reply (partial sg-par-fn
                                  (map :scatter-gather ps))
-                    :no-reply (partial no-reply-par-fn
-                                            (map (comp :no-reply
-                                                       (partial a-comp {}))
-                                                 ps))
+                    :no-reply (partial par-fn
+                                       (map (comp :no-reply
+                                                  (partial a-comp {}))
+                                            ps))
                     :scatter-gather (partial a-par-scatter-gather
                                                   (map :scatter-gather ps))})
 
@@ -326,7 +330,7 @@
   (if-not (seq l)
     (empty l)
     (a-run (comp-fn (:reply (conduit-seq l))
-                   (:no-reply p)))))
+                    (:no-reply p)))))
 
 (defmacro def-arr [name args & body]
   `(def ~name (a-arr (fn ~name ~args ~@body))))
@@ -354,8 +358,8 @@
      :parts (:parts p)
      :reply reply-fn
      :no-reply (fn disperse-final [xs]
-                 (dorun (conduit-map p xs))
-                 [[] disperse-final])
+                 [[(doall (conduit-map p xs))]
+                  disperse-final])
      :scatter-gather (fn [xs]
                        (fn []
                          (partial reply-fn xs)))}))
