@@ -4,13 +4,13 @@ A library for doing stream processing easily in Clojure
 
 ## Usage
 
-See: conduit-samples.clj
+See: http://intensivesystems.net/tutorials/stream_proc.html
 
 ## Installation
 
 Add:
 
-[net.intensivesystems/conduit "0.5.0-SNAPSHOT"]
+[net.intensivesystems/conduit "0.7.0-SNAPSHOT"]
 
 to project.clj
 
