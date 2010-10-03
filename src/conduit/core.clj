@@ -308,7 +308,7 @@
 (def pass-through
   (a-arr identity))
 
-(def a-selectp [pred & vp-pairs]
+(defn a-selectp [pred & vp-pairs]
   (a-comp
     (a-all (a-arr pred)
            pass-through)
