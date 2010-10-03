@@ -308,6 +308,12 @@
 (def pass-through
   (a-arr identity))
 
+(def a-selectp [pred & vp-pairs]
+  (a-comp
+    (a-all (a-arr pred)
+           pass-through)
+    (apply a-select vp-pairs)))
+
 (defn a-except [p catch-p]
   (assoc (a-comp
            {:parts (:parts p)
@@ -361,8 +367,7 @@
                  [[(doall (conduit-map p xs))]
                   disperse-final])
      :scatter-gather (fn [xs]
-                       (fn []
-                         (partial reply-fn xs)))}))
+                       (partial reply-fn xs))}))
 
 (defn test-conduit [p]
   (condp = (:created-by p)
@@ -387,3 +392,12 @@
 (defn test-conduit-fn [p]
   (comp first (:reply (test-conduit p))))
 
+(defn debug-proc [label p]
+  (a-comp (a-arr (fn [x]
+                   (println label "received:" x)
+                   x))
+          p
+          (a-arr (fn [x]
+                   (println label "produced:" x)
+                   x))))
+  
