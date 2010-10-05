@@ -1,6 +1,5 @@
 (ns conduit.require
   (:use 
-     arrows.core
      conduit.core))
 
 (def proc a-arr)
