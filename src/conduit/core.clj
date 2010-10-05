@@ -332,6 +332,11 @@
          :created-by :a-except
          :args [p catch-p]))
 
+(defn conduit-do [p & [v]]
+  (a-arr (fn [x]
+           ((:no-reply p) x)
+           [v])))
+
 (defn conduit-map [p l]
   (if-not (seq l)
     (empty l)
