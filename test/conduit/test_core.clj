@@ -1,4 +1,5 @@
 (ns conduit.test-core
+  (:require [conduit.require :as conduit])
   (:use conduit.core :reload-all)
   (:use
      clojure.test
