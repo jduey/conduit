@@ -436,6 +436,16 @@
 
          (def tf (test-conduit bogus)))
 
+(deftest test-comp-par-loop
+         (is (= [4 5 11 10 10 10 10] 
+                (conduit-map
+                  (a-comp
+                    (a-all
+                      (a-loop (a-arr (fn [[m x]] (max m x))) 0)
+                      (a-loop (a-arr (fn [[m x]] (min m x))) 100))
+                    (a-arr #(apply + %)))
+                  [2 3 9 1 4 5 2]))))
+
 (deftest test-disperse
          (def make-and-dec (a-comp (a-arr range)
                                    (disperse

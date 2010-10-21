@@ -44,11 +44,11 @@
                               [x1 f2]
                               (f2 (first x1)))]
               (cond
-                (and (= f1 new1) (= f2 new2))
-                [x2 a-comp]
-
                 (or (not new1) (not new2))
                 [x2 nil]
+
+                (and (= f1 new1) (= f2 new2))
+                [x2 a-comp]
 
                 :else
                 [x2 (comp-fn new1 new2)])))))
@@ -116,6 +116,30 @@
         (nil? new-fb-f) nil
         (empty? fb-x) (partial loop-fn new-f new-fb-f prev-x)
         :else (partial loop-fn new-f new-fb-f (first fb-x)))])))
+  
+(defn sg-loop-fn
+  ([body-fn prev-x curr-x]
+   (let [gather-fn (body-fn [prev-x curr-x])]
+     (fn []
+       (let [[new-x new-f] (gather-fn)]
+         [new-x
+          (cond
+            (nil? new-f) nil
+            (empty? new-x) (partial sg-loop-fn new-f prev-x)
+            :else (partial sg-loop-fn new-f (first new-x)))]))))
+  ([body-fn feedback-fn prev-x curr-x]
+   (let [gather-fn (body-fn [prev-x curr-x])]
+     (fn []
+       (let [[new-x new-f] (gather-fn)
+             [fb-x new-fb-f] (if-not (empty? new-x)
+                               (feedback-fn (first new-x)))]
+         [new-x
+          (cond
+            (nil? new-f) nil
+            (empty? new-x) (partial sg-loop-fn new-f feedback-fn prev-x)
+            (nil? new-fb-f) nil
+            (empty? fb-x) (partial sg-loop-fn new-f new-fb-f prev-x)
+            :else (partial sg-loop-fn new-f new-fb-f (first fb-x)))])))))
 
 (defn select-fn [selection-map [v x]]
   (if-let [f (if (contains? selection-map v)
@@ -278,12 +302,16 @@
                     ([body-proc initial-value]
                      (let [new-fn (partial loop-fn
                                      (:reply body-proc)
-                                     initial-value)]
+                                     initial-value)
+                           sg-fn (partial sg-loop-fn
+                                          (:scatter-gather body-proc)
+                                          initial-value)]
                        {:created-by :a-loop
                         :args [body-proc initial-value]
                         :parts (:parts body-proc)
                         :reply new-fn
-                        :no-reply new-fn}))
+                        :no-reply new-fn
+                        :scatter-gather sg-fn}))
                     ([body-proc initial-value feedback-proc]
                      (let [new-fn (partial loop-fn
                                            (:reply body-proc)
