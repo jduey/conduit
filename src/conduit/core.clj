@@ -376,7 +376,9 @@
 (defn conduit-proc [proc-fn]
   (let [new-fn (fn this-fn [x]
                  [(proc-fn x) this-fn])]
-    {:reply new-fn
+    {:created-by :conduit-proc
+     :args proc-fn
+     :reply new-fn
      :no-reply new-fn
      :scatter-gather (fn [x]
                        (partial new-fn x))}))
@@ -404,6 +406,7 @@
 (defn test-conduit [p]
   (condp = (:created-by p)
       nil p
+      :conduit-proc (conduit-proc (:args p))
       :a-arr (a-arr (:args p))
       :a-comp (apply a-comp (map test-conduit (:args p)))
       :a-par (apply a-par (map test-conduit (:args p)))
