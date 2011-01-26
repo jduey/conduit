@@ -420,13 +420,27 @@
   (let [te (a-arr (fn [x]
                     (when (even? x)
                       (throw (Exception. "An even int")))
-                    (* 2 x)))]
+                    (* 2 x)))
+        x (assoc te
+            :no-reply (fn this-fn [_]
+                        [[2] this-fn])
+            :reply (fn this-fn [_]
+                     [[1] this-fn]))
+        tx (a-except x (a-arr (constantly nil)))]
     (is (thrown? Exception
                  (conduit-map te (range 5))))
 
     (is (= [nil 2 nil 6 nil]
              (conduit-map (a-except te
                                     (a-arr (constantly nil)))
+                          (range 5))))
+    (is (= (repeat 5 2)
+           (conduit-map tx
+                        (range 5))))
+
+    #_(is (= []
+             (conduit-map (a-comp (a-all tx tx)
+                                  pass-through)
                           (range 5))))))
 
 (deftest test-test-conduit
@@ -457,5 +471,3 @@
           [-1 0 1 2 3]]
            (conduit-map make-and-dec
                         (range 6)))))
-
-(run-tests)

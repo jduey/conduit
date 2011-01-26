@@ -342,22 +342,22 @@
    (apply a-select vp-pairs)))
 
 (defn a-except [p catch-p]
-  (assoc (a-comp
-          {:parts (:parts p)
-           :reply (partial (fn a-except [f x]
-                             (try
-                               (let [[new-x new-f] (f x)]
-                                 [[['_ (first new-x)]]
-                                  (partial a-except new-f)])
-                               (catch Exception e
-                                 [[[Exception [e x]]]
-                                  (partial a-except f)])))
-                           (:reply p))}
-          (a-select
-           Exception catch-p
-           '_ pass-through))
-    :created-by :a-except
-    :args [p catch-p]))
+  (letfn [(a-except [f catch-f x]
+                    (try
+                      (let [[new-x new-f] (f x)]
+                        [new-x (partial a-except new-f catch-f)])
+                      (catch Exception e
+                        (let [[new-x new-catch] (catch-f [e x])]
+                          [new-x (partial a-except f new-catch)]))))]
+    {:parts (:parts p)
+     :reply (partial a-except
+                     (:reply p)
+                     (:reply catch-p))
+     :no-reply (partial a-except
+                        (:no-reply p)
+                        (:no-reply catch-p))
+     :created-by :a-except
+     :args [p catch-p]}))
 
 (defn conduit-do [p & [v]]
   (a-arr (fn [x]
