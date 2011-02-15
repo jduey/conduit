@@ -10,6 +10,7 @@
 (def reduce a-loop)
 (def map conduit-map)
 (def do conduit-do)
+(def try a-except)
 (defmacro def [name args & body]
   `(def ~name (a-arr (fn ~name ~args ~@body))))
 (defmacro def* [name args & body]
