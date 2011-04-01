@@ -333,13 +333,21 @@
 (def a-loop (conduit :a-loop))
 
 (def pass-through
-  (a-arr identity))
+     (a-arr identity))
 
 (defn a-selectp [pred & vp-pairs]
   (a-comp
    (a-all (a-arr pred)
           pass-through)
    (apply a-select vp-pairs)))
+
+(defn a-if [a b c]
+  (a-comp (a-all (a-arr (comp boolean a))
+                 pass-through)
+          (a-select
+           true b
+           false c)
+          pass-through))
 
 (defn a-except [p catch-p]
   (letfn [(a-except [f catch-f x]
@@ -359,6 +367,23 @@
      :created-by :a-except
      :args [p catch-p]}))
 
+(defn a-finally [p final-p]
+  (letfn [(a-finally [f final-f x]
+                     (try
+                       (let [[new-x new-f] (f x)]
+                         [new-x (partial a-finally new-f final-f)])
+                       (finally
+                        (final-f x))))]
+    {:parts (:parts p)
+     :reply (partial a-finally
+                     (:reply p)
+                     (:reply final-p))
+     :no-reply (partial a-finally
+                        (:no-reply p)
+                        (:no-reply final-p))
+     :created-by :a-finally
+     :args [p final-p]}))
+
 (defn conduit-do [p & [v]]
   (a-arr (fn [x]
            ((:no-reply p) x)
@@ -367,8 +392,10 @@
 (defn conduit-map [p l]
   (if-not (seq l)
     (empty l)
-    (a-run (comp-fn (:reply (conduit-seq l))
-                    (:no-reply p)))))
+    (let [result (a-run (comp-fn (:reply (conduit-seq l))
+                                 (:no-reply p)))]
+      (pr-str result)
+      result)))
 
 (defmacro def-arr [name args & body]
   `(def ~name (a-arr (fn ~name ~args ~@body))))
@@ -422,6 +449,7 @@
                   (a-loop (test-conduit bp)
                           iv)))
       :a-except (apply a-except (map test-conduit (:args p)))
+      :a-finally (apply a-finally (map test-conduit (:args p)))
       :disperse (disperse (test-conduit (:args p)))))
 
 (defn test-conduit-fn [p]

@@ -439,9 +439,27 @@
                         (range 5))))
 
     #_(is (= []
-             (conduit-map (a-comp (a-all tx tx)
-                                  pass-through)
-                          (range 5))))))
+               (conduit-map (a-comp (a-all tx tx)
+                                    pass-through)
+                            (range 5))))))
+
+(deftest test-a-finally
+  (let [main-count (atom 0)
+        finally-count (atom 0)
+        te (a-arr (fn [x]
+                    (when (even? x)
+                      (throw (Exception. "An even int")))
+                    (swap! main-count inc)
+                    (* 2 x)))
+        tx (a-finally te (a-arr (fn [x]
+                                 (swap! finally-count inc)
+                                 x)))
+        tf (a-except tx (a-arr (constantly nil)))]
+    (is (= [nil 2 nil 6 nil]
+             (conduit-map tf (range 5))))
+    (is (= 2 @main-count))
+    (is (= 5 @finally-count))
+))
 
 (deftest test-test-conduit
   (def-proc bogus [x]
