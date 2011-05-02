@@ -10,6 +10,8 @@
 (def reduce a-loop)
 (def map conduit-map)
 (def do conduit-do)
+(def select a-select)
+(def selectp a-selectp)
 (def if a-if)
 (def try a-except)
 (def finally a-finally)
