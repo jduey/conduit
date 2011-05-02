@@ -1,7 +1,8 @@
 (ns conduit.require
   (:use [conduit.core :exclude [disperse test-conduit test-conduit-fn]])
-  (:refer-clojure :exclude [case comp juxt reduce map]))
+  (:refer-clojure :exclude [case comp juxt reduce map identity]))
 
+(def identity pass-through)
 (def proc a-arr)
 (def proc* conduit-proc)
 (def case a-selectp)
