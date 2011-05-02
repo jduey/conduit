@@ -343,13 +343,14 @@
           pass-through)
    (apply a-select vp-pairs)))
 
-(defn a-if [a b c]
-  (a-comp (a-all (a-arr (comp boolean a))
-                 pass-through)
-          (a-select
-           true b
-           false c)
-          pass-through))
+(defn a-if [a b & [c]]
+  (let [c (or c (constantly nil))]
+    (a-comp (a-all (a-arr (comp boolean a))
+                   pass-through)
+            (a-select
+             true b
+             false c)
+            pass-through)))
 
 (defn a-except [p catch-p]
   (letfn [(a-except [f catch-f x]
