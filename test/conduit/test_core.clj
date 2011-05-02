@@ -425,8 +425,19 @@
             :no-reply (fn this-fn [_]
                         [[2] this-fn])
             :reply (fn this-fn [_]
-                     [[1] this-fn]))
-        tx (a-except x (a-arr (constantly nil)))]
+                     [[1] this-fn])
+            :scatter-gather (fn this-fn [x]
+                              (if (zero? (mod x 3))
+                                (throw (Exception. "Div by 3"))
+                                (fn []
+                                  [[3] this-fn]))))
+        tx (a-except x pass-through)
+        ty (a-except te
+                     (a-arr (fn [[e _]]
+                              10)))
+        tz (a-except x
+                     (a-arr (fn [[e _]]
+                              15)))]
     (is (thrown? Exception
                  (conduit-map te (range 5))))
 
@@ -438,10 +449,10 @@
            (conduit-map tx
                         (range 5))))
 
-    #_(is (= []
-               (conduit-map (a-comp (a-all tx tx)
-                                    pass-through)
-                            (range 5))))))
+    (is (= [[10 15] [2 3] [10 3] [6 15] [10 3]]
+             (conduit-map (a-comp (a-all ty tz)
+                                  pass-through)
+                          (range 5))))))
 
 (deftest test-a-finally
   (let [main-count (atom 0)

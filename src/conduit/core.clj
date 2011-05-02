@@ -354,12 +354,26 @@
 
 (defn a-except [p catch-p]
   (letfn [(a-except [f catch-f x]
-                    (try
-                      (let [[new-x new-f] (f x)]
-                        [new-x (partial a-except new-f catch-f)])
-                      (catch Exception e
-                        (let [[new-x new-catch] (catch-f [e x])]
-                          [new-x (partial a-except f new-catch)]))))]
+            (try
+              (let [[new-x new-f] (f x)]
+                [new-x (partial a-except new-f catch-f)])
+              (catch Exception e
+                (let [[new-x new-catch] (catch-f [e x])]
+                  [new-x (partial a-except f new-catch)]))))
+          (a-except-sg [f catch-f x]
+            (try
+              (let [result-f (f x)]
+                (fn []
+                  (try
+                    (let [[new-x new-f] (result-f)]
+                      [new-x (partial a-except-sg new-f catch-f)])
+                    (catch Exception e
+                      (let [[new-x new-catch] (catch-f [e x])]
+                        [new-x (partial a-except-sg f new-catch)])))))
+              (catch Exception e
+                (fn []
+                  (let [[new-x new-catch] (catch-f [e x])]
+                    [new-x (partial a-except-sg f new-catch)])))))]
     {:parts (:parts p)
      :reply (partial a-except
                      (:reply p)
@@ -367,16 +381,19 @@
      :no-reply (partial a-except
                         (:no-reply p)
                         (:no-reply catch-p))
+     :scatter-gather (partial a-except-sg
+                              (:scatter-gather p)
+                              (:reply catch-p))
      :created-by :a-except
      :args [p catch-p]}))
 
 (defn a-finally [p final-p]
   (letfn [(a-finally [f final-f x]
-                     (try
-                       (let [[new-x new-f] (f x)]
-                         [new-x (partial a-finally new-f final-f)])
-                       (finally
-                        (final-f x))))]
+            (try
+              (let [[new-x new-f] (f x)]
+                [new-x (partial a-finally new-f final-f)])
+              (finally
+               (final-f x))))]
     {:parts (:parts p)
      :reply (partial a-finally
                      (:reply p)
