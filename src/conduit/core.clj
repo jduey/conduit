@@ -393,6 +393,17 @@
               (let [[new-x new-f] (f x)]
                 [new-x (partial a-finally new-f final-f)])
               (finally
+               (final-f x))))
+          (a-finally-sg [f final-f x]
+            (try
+              (let [result-f (f x)]
+                (fn []
+                  (try
+                    (let [[new-x new-f] (result-f)]
+                      [new-x (partial a-finally-sg new-f final-f)])
+                    (finally
+                     (final-f x)))))
+              (finally
                (final-f x))))]
     {:parts (:parts p)
      :reply (partial a-finally
@@ -401,6 +412,9 @@
      :no-reply (partial a-finally
                         (:no-reply p)
                         (:no-reply final-p))
+     :scatter-gather (partial a-finally-sg
+                        (:scatter-gather p)
+                        (:reply final-p))
      :created-by :a-finally
      :args [p final-p]}))
 

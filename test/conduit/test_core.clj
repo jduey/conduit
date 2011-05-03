@@ -456,21 +456,43 @@
 
 (deftest test-a-finally
   (let [main-count (atom 0)
+        secondary-count (atom 0)
         finally-count (atom 0)
         te (a-arr (fn [x]
                     (when (even? x)
                       (throw (Exception. "An even int")))
                     (swap! main-count inc)
                     (* 2 x)))
+        x (assoc te
+            :scatter-gather (fn this-fn [x]
+                              (when (zero? (mod x 3))
+                                (swap! main-count inc)
+                                (throw (Exception. "Div by 3")))
+                              (fn []
+                                (when (even? x)
+                                  (swap! secondary-count inc)
+                                  (throw (Exception. "Even!!!")))
+                                [[(* 10 x)] this-fn])))
         tx (a-finally te (a-arr (fn [x]
+                                  (swap! finally-count inc)
+                                  x)))
+        ty (a-finally x (a-arr (fn [x]
                                  (swap! finally-count inc)
                                  x)))
-        tf (a-except tx (a-arr (constantly nil)))]
+        tf (a-except tx (a-arr (constantly nil)))
+        tz (a-except ty (a-arr (fn [[_ x]] x)))]
     (is (= [nil 2 nil 6 nil]
              (conduit-map tf (range 5))))
     (is (= 2 @main-count))
     (is (= 5 @finally-count))
-))
+
+    (reset! main-count 0)
+    (reset! secondary-count 0)
+    (is (= [[0 0] [10 10] [2 2] [3 3] [4 4] [50 50]]
+               (conduit-map (a-comp (a-all tz tz)
+                                    pass-through)
+                            (range 6))))
+    ))
 
 (deftest test-test-conduit
   (def-proc bogus [x]
