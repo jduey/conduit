@@ -403,8 +403,9 @@
                       [new-x (partial a-finally-sg new-f final-f)])
                     (finally
                      (final-f x)))))
-              (finally
-               (final-f x))))]
+              (catch Exception e
+                (final-f x)
+                (throw e))))]
     {:parts (:parts p)
      :reply (partial a-finally
                      (:reply p)
