@@ -335,7 +335,7 @@
 (def a-loop (conduit :a-loop))
 
 (def pass-through
-     (a-arr identity))
+  (a-arr identity))
 
 (defn a-selectp [pred & vp-pairs]
   (a-comp
@@ -414,8 +414,8 @@
                         (:no-reply p)
                         (:no-reply final-p))
      :scatter-gather (partial a-finally-sg
-                        (:scatter-gather p)
-                        (:reply final-p))
+                              (:scatter-gather p)
+                              (:reply final-p))
      :created-by :a-finally
      :args [p final-p]}))
 
@@ -466,25 +466,25 @@
 (defn test-conduit [p]
   (binding [*testing-conduit* true]
     (condp = (:created-by p)
-        nil p
-        :conduit-proc (conduit-proc (:args p))
-        :a-arr (a-arr (:args p))
-        :a-comp (apply a-comp (map test-conduit (:args p)))
-        :a-par (apply a-par (map test-conduit (:args p)))
-        :a-all (apply a-all (map test-conduit (:args p)))
-        :a-select (apply a-select (mapcat (fn [[k v]]
-                                            [k (test-conduit v)])
-                                          (:args p)))
-        :a-loop (let [[bp iv fb] (:args p)]
-                  (if fb
-                    (a-loop (test-conduit bp)
-                            iv
-                            (test-conduit fb))
-                    (a-loop (test-conduit bp)
-                            iv)))
-        :a-except (apply a-except (map test-conduit (:args p)))
-        :a-finally (apply a-finally (map test-conduit (:args p)))
-        :disperse (disperse (test-conduit (:args p))))))
+      nil p
+      :conduit-proc (conduit-proc (:args p))
+      :a-arr (a-arr (:args p))
+      :a-comp (apply a-comp (map test-conduit (:args p)))
+      :a-par (apply a-par (map test-conduit (:args p)))
+      :a-all (apply a-all (map test-conduit (:args p)))
+      :a-select (apply a-select (mapcat (fn [[k v]]
+                                          [k (test-conduit v)])
+                                        (:args p)))
+      :a-loop (let [[bp iv fb] (:args p)]
+                (if fb
+                  (a-loop (test-conduit bp)
+                          iv
+                          (test-conduit fb))
+                  (a-loop (test-conduit bp)
+                          iv)))
+      :a-except (apply a-except (map test-conduit (:args p)))
+      :a-finally (apply a-finally (map test-conduit (:args p)))
+      :disperse (disperse (test-conduit (:args p))))))
 
 (defn test-conduit-fn [p]
   (comp first (:reply (test-conduit p))))
