@@ -454,6 +454,73 @@
                                 pass-through)
                         (range 5))))))
 
+(deftest test-a-catch
+  (let [te (a-arr (fn [x]
+                    (when (even? x)
+                      (throw (Exception. "An even int")))
+                    (* 2 x)))
+        x (assoc te
+            :no-reply (fn this-fn [_]
+                        [[2] this-fn])
+            :reply (fn this-fn [_]
+                     [[1] this-fn])
+            :scatter-gather (fn this-fn [x]
+                              (if (zero? (mod x 3))
+                                (throw (Exception. "Div by 3"))
+                                (fn []
+                                  [[3] this-fn]))))
+        tx (a-catch x pass-through)
+        ty (a-catch te
+                    (a-arr (fn [[e _]]
+                             10)))
+        tz (a-catch x
+                    (a-arr (fn [[e _]]
+                             15)))]
+    (is (thrown? Exception
+                 (conduit-map te (range 5))))
+
+    (is (= [nil 2 nil 6 nil]
+           (conduit-map (a-catch te
+                                 (a-arr (constantly nil)))
+                        (range 5))))
+    (is (= (repeat 5 2)
+           (conduit-map tx
+                        (range 5))))
+
+    (is (= [[10 15] [2 3] [10 3] [6 15] [10 3]]
+           (conduit-map (a-comp (a-all ty tz)
+                                pass-through)
+                        (range 5)))))
+  (let [e1 (a-arr (fn [x] (throw (ArithmeticException.))))
+        e2 (a-arr (fn [x] (throw (OutOfMemoryError.))))
+        t (a-arr (constantly true))]
+    (is (thrown? ArithmeticException
+                 (conduit-map
+                  (a-catch OutOfMemoryError
+                           e1
+                           t)
+                  [1])))
+    (is (first (conduit-map
+                (a-catch ArithmeticException
+                         e1
+                         t)
+                [1])))
+    (is (first (conduit-map
+                (a-catch OutOfMemoryError
+                         e2
+                         t)
+                [1])))
+    (is (first (conduit-map
+                (a-catch Throwable
+                         e1
+                         t)
+                [1])))
+    (is (first (conduit-map
+                (a-catch Throwable
+                         e2
+                         t)
+                [1])))))
+
 (deftest test-a-finally
   (let [main-count (atom 0)
         secondary-count (atom 0)

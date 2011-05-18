@@ -1,7 +1,8 @@
 (ns conduit.core
   (:use [clojure.contrib.seq-utils :only [indexed]]
+        [clojure.contrib.def :only [defmacro-]]
         [clojure.pprint :only [pprint]]
-        arrows.core))
+        [arrows.core]))
 
 (def *testing-conduit* false)
 
@@ -387,6 +388,52 @@
      :created-by :a-except
      :args [p catch-p]}))
 
+(defmacro- dynamic-try-catch [[class e] try-block catch-block]
+  `(try
+     ~try-block
+     (catch Throwable ~e
+       (if (instance? ~class ~e)
+         ~catch-block
+         (throw ~e)))))
+
+(defn a-catch
+  ([p catch-p]
+     (a-catch Exception p catch-p))
+  ([class p catch-p]
+     (letfn [(a-catch [f catch-f x]
+               (dynamic-try-catch
+                [class e]
+                (let [[new-x new-f] (f x)]
+                  [new-x (partial a-catch new-f catch-f)])
+                (let [[new-x new-catch] (catch-f [e x])]
+                  [new-x (partial a-catch f new-catch)])))
+             (a-catch-sg [f catch-f x]
+               (dynamic-try-catch
+                [class e]
+                (let [result-f (f x)]
+                  (fn []
+                    (dynamic-try-catch
+                     [class e]
+                     (let [[new-x new-f] (result-f)]
+                       [new-x (partial a-catch-sg new-f catch-f)])
+                     (let [[new-x new-catch] (catch-f [e x])]
+                       [new-x (partial a-catch-sg f new-catch)]))))
+                (fn []
+                  (let [[new-x new-catch] (catch-f [e x])]
+                    [new-x (partial a-catch-sg f new-catch)]))))]
+       {:parts (:parts p)
+        :reply (partial a-catch
+                        (:reply p)
+                        (:reply catch-p))
+        :no-reply (partial a-catch
+                           (:no-reply p)
+                           (:no-reply catch-p))
+        :scatter-gather (partial a-catch-sg
+                                 (:scatter-gather p)
+                                 (:reply catch-p))
+        :created-by :a-catch
+        :args [class p catch-p]})))
+
 (defn a-finally [p final-p]
   (letfn [(a-finally [f final-f x]
             (try
@@ -483,6 +530,8 @@
                   (a-loop (test-conduit bp)
                           iv)))
       :a-except (apply a-except (map test-conduit (:args p)))
+      :a-catch (apply a-catch (first (:args p))
+                      (map test-conduit (rest (:args p))))
       :a-finally (apply a-finally (map test-conduit (:args p)))
       :disperse (disperse (test-conduit (:args p))))))
 
