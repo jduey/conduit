@@ -1,4 +1,4 @@
-(defproject conduit "0.8.3-SNAPSHOT"
+(defproject conduit "0.8.3"
   :description "Conduit: Stream Processing in Clojure."
   :dependencies [[org.clojure/clojure "1.2.1"]
                  [org.clojure/clojure-contrib "1.2.0"]
