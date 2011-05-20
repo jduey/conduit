@@ -427,10 +427,8 @@
 (defn conduit-map [p l]
   (if-not (seq l)
     (empty l)
-    (let [result (a-run (comp-fn (:reply (conduit-seq l))
-                                 (:no-reply p)))]
-      (pr-str result)
-      result)))
+    (a-run (comp-fn (:reply (conduit-seq l))
+                    (:no-reply p)))))
 
 (defmacro def-arr [name args & body]
   `(def ~name (a-arr (fn ~name ~args ~@body))))
