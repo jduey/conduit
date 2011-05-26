@@ -1,6 +1,6 @@
 (ns conduit.core
   (:use [clojure.contrib.seq-utils :only [indexed]]
-        [clojure.contrib.def :only [defmacro-]]
+        [clojure.contrib.def :only [defalias defmacro-]]
         [clojure.pprint :only [pprint]]
         [arrows.core]))
 
@@ -353,41 +353,6 @@
              false c)
             pass-through)))
 
-(defn a-except [p catch-p]
-  (letfn [(a-except [f catch-f x]
-            (try
-              (let [[new-x new-f] (f x)]
-                [new-x (partial a-except new-f catch-f)])
-              (catch Exception e
-                (let [[new-x new-catch] (catch-f [e x])]
-                  [new-x (partial a-except f new-catch)]))))
-          (a-except-sg [f catch-f x]
-            (try
-              (let [result-f (f x)]
-                (fn []
-                  (try
-                    (let [[new-x new-f] (result-f)]
-                      [new-x (partial a-except-sg new-f catch-f)])
-                    (catch Exception e
-                      (let [[new-x new-catch] (catch-f [e x])]
-                        [new-x (partial a-except-sg f new-catch)])))))
-              (catch Exception e
-                (fn []
-                  (let [[new-x new-catch] (catch-f [e x])]
-                    [new-x (partial a-except-sg f new-catch)])))))]
-    {:parts (:parts p)
-     :reply (partial a-except
-                     (:reply p)
-                     (:reply catch-p))
-     :no-reply (partial a-except
-                        (:no-reply p)
-                        (:no-reply catch-p))
-     :scatter-gather (partial a-except-sg
-                              (:scatter-gather p)
-                              (:reply catch-p))
-     :created-by :a-except
-     :args [p catch-p]}))
-
 (defmacro- dynamic-try-catch [[class e] try-block catch-block]
   `(try
      ~try-block
@@ -433,6 +398,8 @@
                                  (:reply catch-p))
         :created-by :a-catch
         :args [class p catch-p]})))
+
+(defalias a-except a-catch)
 
 (defn a-finally [p final-p]
   (letfn [(a-finally [f final-f x]
