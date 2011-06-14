@@ -8,4 +8,6 @@
                      [lein-fail-fast "1.0.0"]
                      [lein-release "1.1.1"]
                      [swank-clojure "1.2.1"]]
-  :repositories {"lambda" "http://lambda.sa2s.us/snapshots/"})
+  ;; for ci purposes
+  :repositories {"snapshots" "http://localhost/archiva/repository/snapshots"
+                 "releases" "http://localhost/archiva/repository/internal"})
