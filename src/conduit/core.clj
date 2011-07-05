@@ -345,13 +345,12 @@
    (apply a-select vp-pairs)))
 
 (defn a-if [a b & [c]]
-  (let [c (or c (constantly nil))]
+  (let [c (or c (a-arr (constantly nil)))]
     (a-comp (a-all (a-arr (comp boolean a))
                    pass-through)
             (a-select
              true b
-             false c)
-            pass-through)))
+             false c))))
 
 (defmacro- dynamic-try-catch [[class e] try-block catch-block]
   `(try
