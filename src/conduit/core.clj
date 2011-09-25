@@ -7,7 +7,8 @@
          (map (comp :parts meta) ps)))
 
 (defn abort-c [c]
-  (c []))
+  (when c
+    (c [])))
 
 (defn conduit-seq-fn [l]
   (fn curr-fn [x]
