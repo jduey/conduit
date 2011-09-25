@@ -4,36 +4,44 @@
         [clojure.pprint :only [pprint]]
         [arrows.core]))
 
-(def *testing-conduit* false)
-
 (defn merge-parts [ps]
   (apply merge-with merge
          (map :parts ps)))
 
+(defn map-vals [f m]
+  (into {} (map (fn [[k v]]
+                  [k (f v)])
+                m)))
+
+(defn abort-c [c]
+  (c []))
+
 (defn conduit-seq-fn [l]
-  (when (seq l)
-    (fn conduit-seq [x]
-      [[(first l)] (conduit-seq-fn (rest l))])))
+  (fn curr-fn [x]
+    (let [new-f (conduit-seq-fn (rest l))]
+      (if (empty? l)
+        [nil abort-c]
+        [new-f
+         (fn [c]
+           (c [(first l)]))]))))
 
 (defn conduit-seq [l]
   "create a stream processor that emits the contents of a list
   regardless of what is fed to it"
-  (let [new-fn (conduit-seq-fn l)]
-    {:reply new-fn
-     :no-reply new-fn
-     :scatter-gather (fn [x]
-                       (partial new-fn x))}))
+  {:fn (conduit-seq-fn l)})
 
 (defn a-run [f]
   "execute a stream processor function"
-  (when f
-    (let [[new-x new-f] (f nil)]
-      (if (empty? new-x)
-        (recur new-f)
-        (lazy-seq
-         (cons (first new-x)
-               (a-run new-f)))))))
+  (let [[new-f c] (f nil)
+        y (c identity)]
+    (cond
+      (nil? new-f) (list)
+      (empty? y) (recur new-f)
+      :else (lazy-seq
+              (cons (first y)
+                    (a-run new-f))))))
 
+#_(
 (defn comp-fn [f1 f2]
   "Link two processor functions together so that the output
   of the first is fed into the second. Returns a function."
@@ -99,26 +107,6 @@
                 (vector (apply concat new-xs)))]
     [new-x (partial par-fn new-fs)]))
 
-(defn loop-fn
-  ([body-fn prev-x curr-x]
-     (let [[new-x new-f] (body-fn [prev-x curr-x])]
-       [new-x
-        (cond
-         (nil? new-f) nil
-         (empty? new-x) (partial loop-fn new-f prev-x)
-         :else (partial loop-fn new-f (first new-x)))]))
-  ([body-fn feedback-fn prev-x curr-x]
-     (let [[new-x new-f] (body-fn [prev-x curr-x])
-           [fb-x new-fb-f] (if-not (empty? new-x)
-                             (feedback-fn (first new-x)))]
-       [new-x
-        (cond
-         (nil? new-f) nil
-         (empty? new-x) (partial loop-fn new-f feedback-fn prev-x)
-         (nil? new-fb-f) nil
-         (empty? fb-x) (partial loop-fn new-f new-fb-f prev-x)
-         :else (partial loop-fn new-f new-fb-f (first fb-x)))])))
-
 (defn sg-loop-fn
   ([body-fn prev-x curr-x]
      (let [gather-fn (body-fn [prev-x curr-x])]
@@ -143,16 +131,6 @@
              (empty? fb-x) (partial sg-loop-fn new-f new-fb-f prev-x)
              :else (partial sg-loop-fn new-f new-fb-f (first fb-x)))])))))
 
-(defn select-fn [selection-map [v x]]
-  (if-let [f (if (contains? selection-map v)
-               (get selection-map v)
-               (get selection-map '_))]
-    (let [[new-x new-f] (f x)]
-      [new-x (when new-f
-               (partial select-fn
-                        (assoc selection-map v new-f)))])
-    [[] (partial select-fn selection-map)]))
-
 (defn no-reply-select-fn [selection-map [v x]]
   (let [v (if (contains? selection-map v)
             v
@@ -174,11 +152,6 @@
                    (partial scatter-gather-select-fn
                             (assoc selection-map v new-f)))])))
     [[] (partial scatter-gather-select-fn selection-map)]))
-
-(defn map-vals [f m]
-  (into {} (map (fn [[k v]]
-                  [k (f v)])
-                m)))
 
 ;; TODO: make this execute in a future
 (defn scatter-gather-comp [f sg x]
@@ -228,57 +201,133 @@
          (when (every? boolean new-sgs)
            (partial a-par-scatter-gather
                     new-sgs))]))))
+   )
+
+(defn wait-for-reply [{f :fn} x]
+  ((second (f x)) identity))
+
+(defn enqueue [{f :fn} & xs]
+  (loop [[x & xs] xs
+         f f]
+    (when x
+      (let [[new-f result-f] (f x)]
+        (result-f nil)
+        (recur xs new-f)))))
+
+(defn comp-fn [[f & fs]]
+  (fn curr-fn [x]
+    (let [[new-f first-c] (f x)
+          [new-fs new-c] (reduce (fn [[new-fs c] f]
+                                   (let [y (c identity)
+                                         [new-f new-c] (if (empty? y)
+                                                         [f abort-c]
+                                                         (f (first y)))]
+                                     [(conj new-fs new-f) new-c]))
+                                 [[new-f] first-c]
+                                 fs)]
+      [(when-not (some nil? new-fs)
+         (comp-fn new-fs))
+       (fn [c]
+         (when c
+           (new-c c)))])))
+
+(defn nth-fn [n f]
+  (fn curr-fn [xs]
+    (if (<= (count xs) n)
+      [curr-fn abort-c]
+      (let [[new-f new-c] (f (nth xs n))
+            y (new-c identity)]
+        [(nth-fn n new-f)
+         (if (empty? y)
+           abort-c
+           (fn [c]
+             (when c
+               (c [(assoc xs n (first y))]))))]))))
+
+(defn par-fn [fs]
+  (fn curr-fn [xs]
+    (if (not= (count xs) (count fs))
+      [curr-fn abort-c]
+      (let [futs (doall
+                   (map (fn [f x]
+                          (future (let [[new-f c] (f x)
+                                        y (c identity)]
+                                    [new-f y])))
+                        fs xs))
+            fs-and-ys (map deref futs)
+            [new-fs ys] (reduce (fn [[fs ys] [f y]]
+                                  [(conj fs f) (conj ys y)])
+                                [[] []]
+                                fs-and-ys)]
+        [(par-fn new-fs)
+         (if (some empty? ys)
+           abort-c
+           (fn [c]
+             (when c
+               (c [(apply concat ys)]))))]))))
+
+(defn select-fn [selection-map]
+  (fn curr-fn [[v x]]
+    (if-let [f (or (get selection-map v)
+                   (get selection-map '_))]
+      (let [[new-f c] (f x)]
+        [(select-fn (assoc selection-map v new-f)) c])
+      [curr-fn abort-c])))
+
+(defn loop-fn
+  ([f prev-x]
+   (fn curr-fn [x]
+     (let [[new-f c] (f [prev-x x])
+           y (c identity)]
+       (if (empty? y)
+         [curr-fn abort-c]
+         [(loop-fn new-f (first y)) (fn [c]
+                                      (when c
+                                        (c y)))]))))
+  ([f fb-f prev-x]
+   (fn curr-fn [x]
+     (let [[new-f c] (f [prev-x x])
+           y (c identity)]
+       (if (empty? y)
+         [curr-fn abort-c]
+         (let [[new-fb fb-c] (fb-f (first y))
+               fb-y (fb-c identity)]
+           (if (empty? fb-y)
+             [curr-fn abort-c]
+             [(loop-fn new-f new-fb (first fb-y))
+              (fn [c]
+                (when c
+                  (c y)))])))))))
 
 (defarrow conduit
   [a-arr (fn [f]
-           (let [new-fn (fn a-arr [x]
-                          [[(f x)] a-arr])
-                 new-proc new-fn]
-             {:created-by :a-arr
-              :args f
-              :no-reply new-proc
-              :reply new-proc
-              :scatter-gather (fn a-arr-sg [x]
-                                (fn []
-                                  [[(f x)] a-arr-sg]))}))
+           {:created-by :a-arr
+            :args f
+            :fn (fn a-arr [x]
+                  (let [y (f x)]
+                      [a-arr (fn [c]
+                               (when c
+                                 (c [y])))]))})
 
    a-comp (fn [& ps]
-            (let [first-ps (map :reply (butlast ps))
-                  last-p (last ps)
-                  p (reduce comp-fn first-ps)
-                  reply-fn (comp-fn p (:reply last-p))
-                  no-reply-fn (comp-fn p (:no-reply last-p))]
-              {:parts (merge-parts ps)
-               :created-by :a-comp
-               :args ps
-               :reply reply-fn
-               :no-reply no-reply-fn
-               :scatter-gather (partial scatter-gather-comp
-                                        p
-                                        (:scatter-gather last-p))}))
+            {:parts (merge-parts ps)
+             :created-by :a-comp
+             :args ps
+             :fn (if (< (count ps) 2)
+                   (:fn (first ps))
+                   (comp-fn (map :fn ps)))})
 
    a-nth (fn [n p]
-           {:created-by :a-nth
+           {:parts (:parts p)
+            :created-by :a-nth
             :args [n p]
-            :parts (:parts p)
-            :reply (nth-fn n (:reply p))
-            :no-reply (nth-fn n (:no-reply p))
-            :scatter-gather (partial scatter-gather-nth
-                                     n
-                                     (:scatter-gather p))})
+            :fn (nth-fn n (:fn p))})
 
    a-par (fn [& ps]
            {:created-by :a-par
             :args ps
             :parts (merge-parts ps)
-            :reply (partial sg-par-fn
-                            (map :scatter-gather ps))
-            :no-reply (partial par-fn
-                               (map (comp :no-reply
-                                          (partial a-comp {}))
-                                    ps))
-            :scatter-gather (partial a-par-scatter-gather
-                                     (map :scatter-gather ps))})
+            :fn (par-fn (map :fn ps))})
 
    a-all (fn [& ps]
            (assoc (a-comp (a-arr (partial repeat (count ps)))
@@ -291,40 +340,19 @@
                 {:created-by :a-select
                  :args pair-map
                  :parts (merge-parts (vals pair-map))
-                 :reply (partial select-fn
-                                 (map-vals :reply pair-map))
-                 :no-reply (partial no-reply-select-fn
-                                    (map-vals (comp :no-reply
-                                                    (partial a-comp {}))
-                                              pair-map))
-                 :scatter-gather (partial scatter-gather-select-fn
-                                          (map-vals :reply pair-map))}))
+                 :fn (select-fn (map-vals :fn pair-map))}))
 
    a-loop (fn
-            ([body-proc initial-value]
-               (let [new-fn (partial loop-fn
-                                     (:reply body-proc)
-                                     initial-value)
-                     sg-fn (partial sg-loop-fn
-                                    (:scatter-gather body-proc)
-                                    initial-value)]
-                 {:created-by :a-loop
-                  :args [body-proc initial-value]
-                  :parts (:parts body-proc)
-                  :reply new-fn
-                  :no-reply new-fn
-                  :scatter-gather sg-fn}))
-            ([body-proc initial-value feedback-proc]
-               (let [new-fn (partial loop-fn
-                                     (:reply body-proc)
-                                     (:reply feedback-proc)
-                                     initial-value)]
-                 {:created-by :a-loop
-                  :args [body-proc initial-value feedback-proc]
-                  :parts (:parts (merge-parts [body-proc
-                                               feedback-proc]))
-                  :reply new-fn
-                  :no-reply new-fn})))
+            ([p initial-value]
+             {:created-by :a-loop
+              :args [p initial-value]
+              :parts (:parts p)
+              :fn (loop-fn (:fn p) initial-value)})
+            ([p initial-value fb-p]
+             {:created-by :a-loop
+              :args [p initial-value fb-p]
+              :parts (:parts p)
+              :fn (loop-fn (:fn p) (:fn fb-p) initial-value)}))
    ])
 
 (def a-arr (conduit :a-arr))
@@ -334,6 +362,12 @@
 (def a-all (conduit :a-all))
 (def a-select (conduit :a-select))
 (def a-loop (conduit :a-loop))
+
+(defn conduit-map [p l]
+  (if (empty? l)
+    l
+    (a-run (comp-fn [(:fn (conduit-seq l))
+                     (:fn p)]))))
 
 (def pass-through
   (a-arr identity))
@@ -352,112 +386,50 @@
              true b
              false c))))
 
-(defmacro- dynamic-try-catch [[class e] try-block catch-block]
-  `(try
-     ~try-block
-     (catch Throwable ~e
-       (if (instance? ~class ~e)
-         ~catch-block
-         (throw ~e)))))
-
 (defn a-catch
   ([p catch-p]
      (a-catch Exception p catch-p))
   ([class p catch-p]
-     (letfn [(a-catch [f catch-f x]
-               (dynamic-try-catch
-                [class e]
-                (let [[new-x new-f] (f x)]
-                  [new-x (partial a-catch new-f catch-f)])
-                (let [[new-x new-catch] (catch-f [e x])]
-                  [new-x (partial a-catch f new-catch)])))
-             (a-catch-sg [f catch-f x]
-               (dynamic-try-catch
-                [class e]
-                (let [result-f (f x)]
-                  (fn []
-                    (dynamic-try-catch
-                     [class e]
-                     (let [[new-x new-f] (result-f)]
-                       [new-x (partial a-catch-sg new-f catch-f)])
-                     (let [[new-x new-catch] (catch-f [e x])]
-                       [new-x (partial a-catch-sg f new-catch)]))))
-                (fn []
-                  (let [[new-x new-catch] (catch-f [e x])]
-                    [new-x (partial a-catch-sg f new-catch)]))))]
+     (letfn [(a-catch [f catch-f]
+               (fn [x]
+                 (try
+                   (let [[new-f c] (f x)]
+                     [(a-catch f catch-f) c])
+                   (catch Throwable e
+                     (if (instance? class e)
+                       (let [[new-catch c] (catch-f [e x])]
+                         [(a-catch f new-catch) c])
+                       (throw e))))))]
        {:parts (:parts p)
-        :reply (partial a-catch
-                        (:reply p)
-                        (:reply catch-p))
-        :no-reply (partial a-catch
-                           (:no-reply p)
-                           (:no-reply catch-p))
-        :scatter-gather (partial a-catch-sg
-                                 (:scatter-gather p)
-                                 (:reply catch-p))
+        :fn (a-catch (:fn p)
+                     (:fn catch-p))
         :created-by :a-catch
         :args [class p catch-p]})))
-
-(defalias a-except a-catch)
 
 (defn a-finally [p final-p]
   (letfn [(a-finally [f final-f x]
             (try
-              (let [[new-x new-f] (f x)]
-                [new-x (partial a-finally new-f final-f)])
+              (let [[new-f c] (f x)]
+                [(a-finally f final-f) c])
               (finally
-               (final-f x))))
-          (a-finally-sg [f final-f x]
-            (try
-              (let [result-f (f x)]
-                (fn []
-                  (try
-                    (let [[new-x new-f] (result-f)]
-                      [new-x (partial a-finally-sg new-f final-f)])
-                    (finally
-                     (final-f x)))))
-              (catch Exception e
-                (final-f x)
-                (throw e))))]
+               (final-f x))))]
     {:parts (:parts p)
-     :reply (partial a-finally
-                     (:reply p)
-                     (:reply final-p))
-     :no-reply (partial a-finally
-                        (:no-reply p)
-                        (:no-reply final-p))
-     :scatter-gather (partial a-finally-sg
-                              (:scatter-gather p)
-                              (:reply final-p))
+     :fn (a-finally (:fn p)
+                    (:fn final-p))
      :created-by :a-finally
      :args [p final-p]}))
-
-(defn conduit-do [p & [v]]
-  (a-arr (fn [x]
-           ((:no-reply p) x)
-           [v])))
-
-(defn conduit-map [p l]
-  (if-not (seq l)
-    (empty l)
-    (a-run (comp-fn (:reply (conduit-seq l))
-                    (:no-reply p)))))
 
 (defmacro def-arr [name args & body]
   `(def ~name (a-arr (fn ~name ~args ~@body))))
 
-(defn conduit-proc [proc-fn]
-  (let [new-fn (fn this-fn [x]
-                 [(proc-fn x) this-fn])]
-    {:created-by :conduit-proc
-     :args proc-fn
-     :reply new-fn
-     :no-reply new-fn
-     :scatter-gather (fn [x]
-                       (partial new-fn x))}))
-
-(defmacro def-proc [name args & body]
-  `(def ~name (conduit-proc (fn ~name ~args ~@body))))
+(defn a-filter [f]
+  {:create-by :a-filter
+   :args f
+   :fn (fn curr-fn [x]
+         (if (f x)
+           [curr-fn (fn [c]
+                      (when c
+                        (c [x])))]))})
 
 (defn disperse [p]
   (let [reply-fn (fn disperse [xs]
@@ -476,6 +448,7 @@
      :scatter-gather (fn [xs]
                        (partial reply-fn xs))}))
 
+#_(
 (defn test-conduit [p]
   (binding [*testing-conduit* true]
     (condp = (:created-by p)
@@ -512,3 +485,4 @@
           (a-arr (fn [x]
                    (println label "produced:" x)
                    x))))
+  )
