@@ -1,5 +1,5 @@
 (ns conduit.test.core
-  #_(:require [conduit.require :as conduit])
+  (:require [conduit.require :as conduit])
   (:use conduit.core :reload-all)
   (:use clojure.test
         arrows.core))
@@ -256,4 +256,3 @@
 (deftest test-text-conduit-fn
     (is (= 5 (first ((test-conduit-fn pl) 4)))))
 
-(run-tests)

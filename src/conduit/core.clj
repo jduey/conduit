@@ -1,7 +1,5 @@
 (ns conduit.core
-  (:use [clojure.contrib.seq-utils :only [indexed]]
-        [clojure.contrib.def :only [defalias defmacro-]]
-        [clojure.pprint :only [pprint]]
+  (:use [clojure.pprint :only [pprint]]
         [arrows.core]))
 
 (defn merge-parts [ps]
@@ -35,17 +33,6 @@
       :else (lazy-seq
               (cons (first y)
                     (a-run new-f))))))
-
-(defn wait-for-reply [f x]
-  ((second (f x)) identity))
-
-(defn enqueue [f & xs]
-  (loop [[x & xs] xs
-         f f]
-    (when x
-      (let [[new-f result-f] (f x)]
-        (result-f nil)
-        (recur xs new-f)))))
 
 (defn comp-fn [[f & fs]]
   (fn curr-fn [x]
@@ -303,6 +290,9 @@
      :args p
      :parts (:parts p)}))
 
+(defn wait-for-reply [f x]
+  ((second (f x)) identity))
+
 (defn test-conduit [p]
   (let [args (:args (meta p))]
     (condp = (:created-by p)
@@ -329,5 +319,4 @@
       :disperse (disperse (test-conduit args)))))
 
 (defn test-conduit-fn [p]
-  (fn [x]
-    ((second (p x)) identity)))
+  (partial wait-for-reply (test-conduit p)))
