@@ -291,6 +291,10 @@
      :args p
      :parts (:parts p)}))
 
+(defn enqueue [f x]
+  ((second (f x)) nil)
+  nil)
+
 (defn wait-for-reply [f x]
   ((second (f x)) identity))
 
