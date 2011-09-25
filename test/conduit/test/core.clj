@@ -13,33 +13,6 @@
       [(test-list-iter (rest l))
        (fn [c] (c (first l)))])))
 
-(deftest test-conduit-map
-  (is (empty? (conduit-map pl [])))
-  (is (empty? (conduit-map pl nil)))
-  (is (= (range 10)
-         (conduit-map pass-through
-                      (range 10)))))
-
-#_(
-(deftest test-test-conduit
-  (def-proc bogus [x]
-    [(inc x)])
-  (def tf (test-conduit bogus)))
-
-(deftest test-disperse
-  (def make-and-dec (a-comp (a-arr range)
-                            (disperse
-                             (a-arr dec))))
-  (is (= [[]
-          [-1]
-          [-1 0]
-          [-1 0 1]
-          [-1 0 1 2]
-          [-1 0 1 2 3]]
-         (conduit-map make-and-dec
-                      (range 6)))))
-  )
-
 (deftest test-a-run
   (testing "a-run"
     (testing "should ignore empty values"
@@ -59,16 +32,23 @@
   (is (= [:a :b :c]
          (a-run (conduit-seq-fn [:a :b :c])))))
 
+(def pl (a-arr inc))
+(def t2 (a-arr (partial * 2)))
+(def flt (fn this-fn [x]
+           (if (odd? x)
+             [this-fn abort-c]
+             [this-fn (fn [c] (c [x]))])))
+
+(deftest test-conduit-map
+  (is (empty? (conduit-map pl [])))
+  (is (empty? (conduit-map pl nil)))
+  (is (= (range 10)
+         (conduit-map pass-through
+                      (range 10)))))
+
 (deftest test-conduit-seq
   (is (= [:a :b :c]
          (conduit-map (conduit-seq [:a :b :c]) (range 0 5)))))
-
-(def pl (a-arr inc))
-(def t2 (a-arr (partial * 2)))
-(def flt {:fn (fn this-fn [x]
-                (if (odd? x)
-                  [this-fn abort-c]
-                  [this-fn (fn [c] (c [x]))]))})
 
 (deftest test-a-arr
   (is (= (range 1 6)
@@ -88,9 +68,9 @@
 
 (deftest test-a-nth
   (let [tf (a-nth 0 pl)
-        tn (a-nth 1 {:fn (fn this-fn [x]
-                           [this-fn (fn [c]
-                                      (c [3]))])})]
+        tn (a-nth 1 (fn this-fn [x]
+                      [this-fn (fn [c]
+                                 (c [3]))]))]
     (is (= [[4 5]]
            (conduit-map tf [[3 5]])))
 
@@ -108,7 +88,7 @@
         tp1 (a-par
              (conduit-seq [:a :b :c])
              pl
-             {:fn (test-list-iter [[1] [] [2]])})]
+             (test-list-iter [[1] [] [2]]))]
     (is (= [[:a 4 10] [:b 4 10] [:c 4 10]]
            (conduit-map tp
                         [[99 3 5] [98 3 5] [97 3 5]])))
@@ -123,16 +103,16 @@
 
 (deftest test-a-select
   (let [tc (a-select
-            :oops {:fn (fn [x]
-                         [nil abort-c])}
+            :oops (fn [x]
+                    [nil abort-c])
             true pl
             false t2)]
     (is (= [9 6]
            (conduit-map tc [[:oops 83] [true 8] [:bogus 100] [false 3]]))))
 
   (let [tc (a-select
-            :oops {:fn (fn [x]
-                         [nil abort-c])}
+             :oops (fn [x]
+                     [nil abort-c])
             true pl
             false t2
             '_ pass-through)]
@@ -231,41 +211,49 @@
 
 (deftest test-a-finally
   (let [main-count (atom 0)
-        secondary-count (atom 0)
         finally-count (atom 0)
         te (a-arr (fn [x]
                     (when (even? x)
                       (throw (Exception. "An even int")))
                     (swap! main-count inc)
                     (* 2 x)))
-        x (assoc te
-            :scatter-gather (fn this-fn [x]
-                              (when (zero? (mod x 3))
-                                (swap! main-count inc)
-                                (throw (Exception. "Div by 3")))
-                              (fn []
-                                (when (even? x)
-                                  (swap! secondary-count inc)
-                                  (throw (Exception. "Even!!!")))
-                                [[(* 10 x)] this-fn])))
-        tx (a-finally te (a-arr (fn [x]
-                                  (swap! finally-count inc)
-                                  x)))
-        ty (a-finally x (a-arr (fn [x]
-                                 (swap! finally-count inc)
-                                 x)))
-        tf (a-except tx (a-arr (constantly nil)))
-        tz (a-except ty (a-arr (fn [[_ x]] x)))]
+        x (a-arr (fn this-fn [x]
+                   (when (zero? (mod x 3))
+                     (swap! main-count inc)
+                     (throw (Exception. "Div by 3")))
+                   (* 10 x)))
+        fin-fn (a-arr (fn [x]
+                        (swap! finally-count inc)))
+        tx (a-finally te fin-fn)
+        ty (a-finally x fin-fn)
+        tf (a-catch tx (a-arr (constantly nil)))
+        tz (a-catch ty (a-arr (fn [[_ x]] x)))]
     (is (= [nil 2 nil 6 nil]
            (conduit-map tf (range 5))))
     (is (= 2 @main-count))
     (is (= 5 @finally-count))
 
     (reset! main-count 0)
-    (reset! secondary-count 0)
-    (is (= [[0 0] [10 10] [2 2] [3 3] [4 4] [50 50]]
+    (is (= [[0 0] [10 10] [20 20] [3 3] [40 40] [50 50]]
            (conduit-map (a-comp (a-all tz tz)
                                 pass-through)
-                        (range 6))))))
+                        (range 6))))
+    (is (= 4 @main-count))))
+
+(deftest test-disperse
+    (let [make-and-dec (a-comp (a-arr range)
+                               (disperse
+                                 (a-arr dec)))]
+      (is (= [[]
+              [-1]
+              [-1 0]
+              [-1 0 1]
+              [-1 0 1 2]
+              [-1 0 1 2 3]]
+             (conduit-map make-and-dec
+                          (range 6))))))
+
+(deftest test-text-conduit-fn
+    (is (= 5 (first ((test-conduit-fn pl) 4)))))
 
 (run-tests)
