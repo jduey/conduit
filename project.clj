@@ -2,7 +2,7 @@
   :description "Conduit: Stream Processing in Clojure."
   :dependencies [[org.clojure/clojure "1.2.1"]
                  [org.clojure/clojure-contrib "1.2.0"]
-                 [arrows "1.2.0"]]
+                 [net.intensivesystems/arrows "1.2.0"]]
   :dev-dependencies [[clj-stacktrace "0.2.2"]
                      [lein-difftest "1.3.3"]
                      [lein-fail-fast "1.0.0"]
