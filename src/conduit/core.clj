@@ -156,7 +156,8 @@
              (a-comp (a-arr (partial repeat (count ps)))
                           (apply a-par ps))
              {:created-by :a-all
-              :args ps}))
+              :args ps
+              :parts (merge-parts ps)}))
 
    a-select (fn [& vp-pairs]
               (let [pair-map (apply hash-map vp-pairs)]
