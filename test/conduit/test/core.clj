@@ -253,6 +253,29 @@
              (conduit-map make-and-dec
                           (range 6))))))
 
-(deftest test-text-conduit-fn
+(deftest test-test-conduit-fn
     (is (= 5 (first ((test-conduit-fn pl) 4)))))
 
+(deftest test-test
+         (let [test-proc (a-comp
+                           (a-arr inc)
+                           (with-meta
+                             (fn [x]
+                               (throw (Exception. "Should not be thrown")))
+                           (select-keys (meta (a-arr (partial * 2)))
+                                        [:created-by :args])))
+               sel-test (a-comp
+                          (a-all (a-arr even?)
+                                 pass-through)
+                          (a-select true test-proc
+                                    false pass-through))
+               test-fn (test-conduit-fn test-proc)]
+
+           (is (= [8 10 12 14]
+                  (mapcat test-fn (range 3 7))))
+           (is (= [8 10 12 14]
+                  (conduit-map (test-conduit test-proc)
+                               (range 3 7))))
+           (is (= [2 1 6 3 10 5 14]
+                  (conduit-map (test-conduit sel-test)
+                               (range 7))))))

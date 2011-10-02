@@ -301,7 +301,7 @@
 
 (defn test-conduit [p]
   (let [args (:args (meta p))]
-    (condp = (:created-by p)
+    (condp = (:created-by (meta p))
       nil p
       :a-arr (a-arr args)
       :a-comp (apply a-comp (map test-conduit args))
