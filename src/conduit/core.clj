@@ -257,7 +257,7 @@
                    (when c
                      (c [x])))]
         [curr-fn abort-c]))
-    {:create-by :a-filter
+    {:created-by :a-filter
      :args f}))
 
 (defn tap [p]
