@@ -11,7 +11,7 @@ And: http://intensivesystems.net/tutorials/streams2.html
 
 Add:
 
-[conduit "0.7.0-SNAPSHOT"]
+[net.intensivesystems/conduit "0.9.0"]
 
 to project.clj
 
