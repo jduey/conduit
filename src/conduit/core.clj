@@ -140,7 +140,7 @@
    a-nth (fn [n p]
            (with-meta
              (nth-fn n p)
-             {:parts (:parts p)
+             {:parts (:parts (meta p))
               :created-by :a-nth
               :args [n p]}))
 
@@ -173,13 +173,13 @@
                (loop-fn p initial-value)
                {:created-by :a-loop
                 :args [p initial-value]
-                :parts (:parts p)}))
+                :parts (:parts (meta p))}))
             ([p initial-value fb-p]
              (with-meta
                (loop-fn p fb-p initial-value)
                {:created-by :a-loop
                 :args [p initial-value fb-p]
-                :parts (:parts p)})))
+                :parts (:parts (meta p))})))
    ])
 
 (def a-arr (conduit :a-arr))
@@ -228,7 +228,7 @@
                        (throw e))))))]
        (with-meta
          (a-catch p catch-p)
-         {:parts (:parts p)
+         {:parts (:parts (meta p))
           :created-by :a-catch
           :args [class p catch-p]}))))
 
@@ -242,7 +242,7 @@
                   (final-f x)))))]
     (with-meta
       (a-finally p final-p)
-      {:parts (:parts p)
+      {:parts (:parts (meta p))
        :created-by :a-finally
        :args [p final-p]})))
 
@@ -290,7 +290,7 @@
                                     (c [(apply concat ys)])))))])))
     {:created-by :disperse
      :args p
-     :parts (:parts p)}))
+     :parts (:parts (meta p))}))
 
 (defn enqueue [f x]
   ((second (f x)) nil)
